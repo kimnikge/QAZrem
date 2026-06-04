@@ -6,3 +6,4 @@ dist
 npm-debug.log*
 coverage
 postgres-data
+*.tsbuildinfo

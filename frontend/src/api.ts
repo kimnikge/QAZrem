@@ -55,6 +55,21 @@ export function search(q: string) {
   return request<SearchResult>(`/search?q=${encodeURIComponent(q)}`);
 }
 
+// --- Device catalog ---
+export type CatalogItem = { brand: string; model: string };
+export type ImeiSearchResult = {
+  device_id: number; brand: string; model: string; imei: string;
+  client_id: number; client_name: string; client_phone: string;
+};
+
+export function searchDeviceCatalog(q: string) {
+  return request<CatalogItem[]>(`/devices/catalog?q=${encodeURIComponent(q)}`);
+}
+
+export function searchDeviceByImei(last4: string) {
+  return request<ImeiSearchResult[]>(`/devices/search-imei?last4=${encodeURIComponent(last4)}`);
+}
+
 // --- Orders ---
 export type Order = {
   id: number; device_id: number; master_id: number | null;

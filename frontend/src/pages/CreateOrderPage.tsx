@@ -1,6 +1,7 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { createOrder, search, getMasters, type CreateOrderInput } from '../api';
+import { createOrder, search, getMasters, searchDeviceCatalog, searchDeviceByImei,
+  type CreateOrderInput, type CatalogItem, type ImeiSearchResult } from '../api';
 
 const priorities = [
   { value: 'normal', label: 'Обычный' },
@@ -35,9 +36,67 @@ export function CreateOrderPage() {
   });
   const [error, setError] = useState('');
 
+  // Autocomplete for device brand/model
+  const [catalogSuggestions, setCatalogSuggestions] = useState<CatalogItem[]>([]);
+  const [showCatalog, setShowCatalog] = useState(false);
+  const [catalogField, setCatalogField] = useState<'brand' | 'model' | null>(null);
+  const catalogTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  // IMEI autocomplete
+  const [imeiSuggestions, setImeiSuggestions] = useState<ImeiSearchResult[]>([]);
+  const [showImei, setShowImei] = useState(false);
+  const imeiTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
   useEffect(() => {
     getMasters().then(setMasters).catch(() => {});
   }, []);
+
+  function handleCatalogInput(field: 'brand' | 'model', value: string) {
+    setDevice(field, value);
+    if (catalogTimer.current) clearTimeout(catalogTimer.current);
+    if (value.length < 2) { setShowCatalog(false); return; }
+    catalogTimer.current = setTimeout(async () => {
+      try {
+        const res = await searchDeviceCatalog(value);
+        setCatalogSuggestions(res);
+        setShowCatalog(res.length > 0);
+        setCatalogField(field);
+      } catch { setShowCatalog(false); }
+    }, 300);
+  }
+
+  function selectCatalog(item: CatalogItem) {
+    setForm(prev => ({
+      ...prev,
+      device: { ...prev.device, brand: item.brand, model: item.model }
+    }));
+    setShowCatalog(false);
+  }
+
+  function handleImeiInput(value: string) {
+    setDevice('imei', value);
+    if (imeiTimer.current) clearTimeout(imeiTimer.current);
+    const last4 = value.replace(/\D/g, '').slice(-4);
+    if (last4.length < 4) { setShowImei(false); return; }
+    imeiTimer.current = setTimeout(async () => {
+      try {
+        const res = await searchDeviceByImei(last4);
+        setImeiSuggestions(res);
+        setShowImei(res.length > 0);
+      } catch { setShowImei(false); }
+    }, 400);
+  }
+
+  function selectImeiDevice(dev: ImeiSearchResult) {
+    setForm(prev => ({
+      ...prev,
+      client: { name: dev.client_name, phone: dev.client_phone, email: '', address: '' },
+      device: { brand: dev.brand, model: dev.model, imei: dev.imei, serial_number: '', color: '' }
+    }));
+    setSearchResult(`Найден: ${dev.client_name} (${dev.client_phone}) — устройство ${dev.brand} ${dev.model}`);
+    setSearchClientId(dev.client_id);
+    setShowImei(false);
+  }
 
   function setClient(field: 'name' | 'phone' | 'email' | 'address', value: string) {
     setForm(prev => ({ ...prev, client: { ...prev.client, [field]: value } }));
@@ -162,9 +221,43 @@ export function CreateOrderPage() {
             <fieldset>
               <legend>Устройство</legend>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-                <input placeholder="Бренд *" value={form.device.brand} onChange={e => setDevice('brand', e.target.value)} required />
-                <input placeholder="Модель *" value={form.device.model} onChange={e => setDevice('model', e.target.value)} required />
-                <input placeholder="IMEI *" value={form.device.imei} onChange={e => setDevice('imei', e.target.value)} required />
+                <div style={{ position: 'relative' }}>
+                  <input placeholder="Бренд *" value={form.device.brand} onChange={e => handleCatalogInput('brand', e.target.value)} onFocus={() => form.device.brand.length >= 2 && setShowCatalog(true)} onBlur={() => setTimeout(() => setShowCatalog(false), 200)} required />
+                  {showCatalog && catalogField === 'brand' && (
+                    <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', border: '1px solid var(--border)', borderRadius: 6, zIndex: 10, maxHeight: 180, overflow: 'auto', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
+                      {[...new Set(catalogSuggestions.map(i => i.brand))].map(b => (
+                        <div key={b} style={{ padding: '8px 12px', cursor: 'pointer', fontSize: 14 }} onMouseDown={() => selectCatalog(catalogSuggestions.find(i => i.brand === b)!)} onMouseOver={e => (e.currentTarget.style.background = '#f5f5f5')} onMouseOut={e => (e.currentTarget.style.background = '')}>{b}</div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div style={{ position: 'relative' }}>
+                  <input placeholder="Модель *" value={form.device.model} onChange={e => handleCatalogInput('model', e.target.value)} onFocus={() => form.device.model.length >= 2 && setShowCatalog(true)} onBlur={() => setTimeout(() => setShowCatalog(false), 200)} required />
+                  {showCatalog && catalogField === 'model' && (
+                    <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', border: '1px solid var(--border)', borderRadius: 6, zIndex: 10, maxHeight: 180, overflow: 'auto', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
+                      {catalogSuggestions
+                        .filter(i => i.brand === form.device.brand || !form.device.brand)
+                        .map((item, idx) => (
+                          <div key={idx} style={{ padding: '8px 12px', cursor: 'pointer', fontSize: 14 }} onMouseDown={() => selectCatalog(item)} onMouseOver={e => (e.currentTarget.style.background = '#f5f5f5')} onMouseOut={e => (e.currentTarget.style.background = '')}>
+                            {item.brand} {item.model}
+                          </div>
+                        ))}
+                    </div>
+                  )}
+                </div>
+                <div style={{ position: 'relative' }}>
+                  <input placeholder="IMEI *" value={form.device.imei} onChange={e => handleImeiInput(e.target.value)} onFocus={() => showImei && setShowImei(true)} onBlur={() => setTimeout(() => setShowImei(false), 200)} required />
+                  {showImei && (
+                    <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', border: '1px solid var(--border)', borderRadius: 6, zIndex: 10, maxHeight: 200, overflow: 'auto', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
+                      {imeiSuggestions.map(dev => (
+                        <div key={dev.device_id} style={{ padding: '8px 12px', cursor: 'pointer', fontSize: 13 }} onMouseDown={() => selectImeiDevice(dev)} onMouseOver={e => (e.currentTarget.style.background = '#e8f0fe')} onMouseOut={e => (e.currentTarget.style.background = '')}>
+                          <strong>{dev.brand} {dev.model}</strong>
+                          <div style={{ color: '#5f6368' }}>{dev.client_name} · {dev.client_phone} · {dev.imei}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                 <input placeholder="Серийный номер" value={form.device.serial_number || ''} onChange={e => setDevice('serial_number', e.target.value)} />

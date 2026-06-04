@@ -30,6 +30,17 @@ financeRouter.get('/report', requireRole('admin'), async (req, res, next) => {
       [fromDate, toDate]
     );
 
+    // Реально оплачено: сумма платежей по завершённым заказам
+    const paidResult = await pool.query(
+      `SELECT COALESCE(SUM(p.amount), 0) AS total
+       FROM payments p
+       JOIN orders o ON o.id = p.order_id
+       WHERE o.completed_at IS NOT NULL
+         AND o.completed_at >= $1
+         AND o.completed_at <= $2`,
+      [fromDate, toDate]
+    );
+
     // Расходы: expenses + закупочная цена запчастей по завершённым заказам
     const expenseResult = await pool.query(
       `SELECT
@@ -43,6 +54,7 @@ financeRouter.get('/report', requireRole('admin'), async (req, res, next) => {
     );
 
     const income = Number(incomeResult.rows[0].total);
+    const paid = Number(paidResult.rows[0].total);
     const directExpenses = Number(expenseResult.rows[0].direct_expenses);
     const partsCost = Number(expenseResult.rows[0].parts_cost);
     const totalExpenses = directExpenses + partsCost;
@@ -58,6 +70,9 @@ financeRouter.get('/report', requireRole('admin'), async (req, res, next) => {
 
     res.json({
       period: { from: fromDate, to: toDate },
+      income,
+      paid,
+      debt: income - paid,
       income,
       expenses: {
         direct: directExpenses,

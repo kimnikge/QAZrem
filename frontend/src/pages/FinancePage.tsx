@@ -58,8 +58,16 @@ export function FinancePage() {
         <>
           <div className="finance-grid" style={{ marginTop: 16 }}>
             <div className="finance-card">
-              <span className="finance-label">Доходы</span>
+              <span className="finance-label">Заработано</span>
               <span className="finance-value positive">{report.income} ₸</span>
+            </div>
+            <div className="finance-card">
+              <span className="finance-label">Оплачено</span>
+              <span className="finance-value" style={{ color: '#1a73e8' }}>{report.paid} ₸</span>
+            </div>
+            <div className="finance-card">
+              <span className="finance-label">Долг</span>
+              <span className={`finance-value ${report.debt > 0 ? 'negative' : 'positive'}`}>{report.debt} ₸</span>
             </div>
             <div className="finance-card">
               <span className="finance-label">Расходы</span>

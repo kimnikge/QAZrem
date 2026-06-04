@@ -126,7 +126,8 @@ export function getParts(lowStock?: boolean) {
 // --- Finance ---
 export type FinanceReport = {
   period: { from: string; to: string };
-  income: number; expenses: { direct: number; parts_cost: number; total: number };
+  income: number; paid: number; debt: number;
+  expenses: { direct: number; parts_cost: number; total: number };
   profit: number; completed_orders: number;
 };
 

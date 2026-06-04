@@ -134,6 +134,35 @@ export function getFinanceReport(from: string, to: string) {
   return request<FinanceReport>(`/finance/report?from=${from}&to=${to}`);
 }
 
+export type MasterPayout = {
+  order_id: number;
+  cost: string;
+  discount: string;
+  master_commission_pct: string;
+  completed_at: string;
+  master_id: number;
+  master_name: string;
+  parts_cost: string;
+  profit: string;
+  master_payout: string;
+};
+
+export type MasterPayoutsResponse = {
+  period: { from: string; to: string; label: string };
+  masters: Array<{
+    master_id: number;
+    master_name: string;
+    orders: MasterPayout[];
+    total_profit: number;
+    total_payout: number;
+  }>;
+};
+
+export function getMasterPayouts(period: string, master_id?: number) {
+  const query = `period=${period}${master_id ? `&master_id=${master_id}` : ''}`;
+  return request<MasterPayoutsResponse>(`/finance/master-payouts?${query}`);
+}
+
 // --- Users ---
 export function getMasters() {
   return request<{ id: number; name: string }[]>('/users/masters');

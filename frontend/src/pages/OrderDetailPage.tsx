@@ -29,8 +29,8 @@ export function OrderDetailPage() {
     setLoading(true);
     try {
       const [o, s] = await Promise.all([
-        getOrder(Number(id)),
-        getOrderStatuses(Number(id))
+        getOrder(Math.round(Number(id))),
+        getOrderStatuses(Math.round(Number(id)))
       ]);
       setOrder(o);
       setAvailableStatuses(s.available);
@@ -51,8 +51,8 @@ export function OrderDetailPage() {
     setSaving(true);
     try {
       const body: Record<string, unknown> = {};
-      if (editCost !== order?.cost) body.cost = Number(editCost);
-      if (editDiscount !== order?.discount) body.discount = Number(editDiscount);
+      if (editCost !== order?.cost) body.cost = Math.round(Number(editCost));
+      if (editDiscount !== order?.discount) body.discount = Math.round(Number(editDiscount));
       if (editDiagnosis !== (order?.diagnosis || '')) body.diagnosis = editDiagnosis;
       if (editComment !== (order?.internal_comment || '')) body.internal_comment = editComment;
 
@@ -76,14 +76,14 @@ export function OrderDetailPage() {
 
   async function handleStatusChange(slug: string) {
     try {
-      await updateOrderStatus(Number(id), slug);
+      await updateOrderStatus(Math.round(Number(id)), slug);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка смены статуса');
     }
   }
 
-  const finalCost = order ? Math.max(0, Number(order.cost) - Number(order.discount)) : 0;
+  const finalCost = order ? Math.max(0, Math.round(Number(order.cost)) - Math.round(Number(order.discount))) : 0;
 
   if (loading) return <div className="loading">Загрузка...</div>;
   if (error) return <div className="error-message">{error}</div>;
@@ -139,10 +139,10 @@ export function OrderDetailPage() {
           ) : (
             <>
               {order.diagnosis && <div className="detail-row"><span>Диагноз</span>{order.diagnosis}</div>}
-              <div className="detail-row"><span>Стоимость</span><strong>{Number(order.cost).toLocaleString()} ₸</strong></div>
-              {Number(order.discount) > 0 && <div className="detail-row"><span>Скидка</span><strong style={{ color: '#ef4444' }}>−{Number(order.discount).toLocaleString()} ₸</strong></div>}
-              <div className="detail-row"><span>Итого</span><strong style={{ color: '#1a73e8', fontSize: 18 }}>{finalCost.toLocaleString()} ₸</strong></div>
-              <div className="detail-row"><span>Предоплата</span><strong>{Number(order.prepaid).toLocaleString()} ₸</strong></div>
+              <div className="detail-row"><span>Стоимость</span><strong>{Math.round(Number(order.cost))} ₸</strong></div>
+              {Math.round(Number(order.discount)) > 0 && <div className="detail-row"><span>Скидка</span><strong style={{ color: '#ef4444' }}>−{Math.round(Number(order.discount))} ₸</strong></div>}
+              <div className="detail-row"><span>Итого</span><strong style={{ color: '#1a73e8', fontSize: 18 }}>{finalCost} ₸</strong></div>
+              <div className="detail-row"><span>Предоплата</span><strong>{Math.round(Number(order.prepaid))} ₸</strong></div>
               {order.internal_comment && <div className="detail-row"><span>Комментарий</span>{order.internal_comment}</div>}
             </>
           )}
@@ -174,7 +174,7 @@ export function OrderDetailPage() {
                 {order.parts.map(p => (
                   <div key={p.id} className="detail-row">
                     <span>{p.part_name} ×{p.quantity_used}</span>
-                    <strong>{Number(p.selling_price_at_moment).toLocaleString()} ₸</strong>
+                    <strong>{Math.round(Number(p.selling_price_at_moment))} ₸</strong>
                   </div>
                 ))}
               </div>
@@ -186,7 +186,7 @@ export function OrderDetailPage() {
                 {order.payments.map(p => (
                   <div key={p.id} className="detail-row">
                     <span>{p.payment_method_name} {p.is_prepayment ? '(предоплата)' : '(доплата)'}</span>
-                    <strong>{Number(p.amount).toLocaleString()} ₸</strong>
+                    <strong>{Math.round(Number(p.amount))} ₸</strong>
                   </div>
                 ))}
               </div>

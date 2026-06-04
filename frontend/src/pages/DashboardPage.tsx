@@ -52,7 +52,7 @@ export function DashboardPage() {
     { label: 'Новые заявки', value: counts.new, color: '#3b82f6' },
     { label: 'В работе', value: counts.diagnosis + counts.repair + counts.waiting_parts, color: '#f59e0b' },
     { label: 'Готовы к выдаче', value: counts.ready, color: '#22c55e' },
-    { label: 'К оплате', value: orders.reduce((s, o) => s + (Number(o.cost) - Number(o.prepaid)), 0), color: '#8b5cf6', currency: true },
+    { label: 'К оплате', value: orders.reduce((s, o) => s + (Math.round(Number(o.cost)) - Math.round(Number(o.prepaid))), 0), color: '#8b5cf6', currency: true },
   ];
 
   return (
@@ -60,7 +60,7 @@ export function DashboardPage() {
       <div className="ro-stats">
         {statCards.map(c => (
           <div key={c.label} className="ro-stat-card" style={{ borderLeftColor: c.color }}>
-            <span className="ro-stat-value">{c.currency ? `${c.value.toLocaleString()} ₸` : c.value}</span>
+            <span className="ro-stat-value">{c.currency ? `${c.value} ₸` : c.value}</span>
             <span className="ro-stat-label">{c.label}</span>
           </div>
         ))}
@@ -109,7 +109,7 @@ export function DashboardPage() {
                   <td>{o.brand} {o.model}</td>
                   <td className="ro-cell-desc">{o.issue_description}</td>
                   <td className="ro-cell-date">{new Date(o.created_at).toLocaleDateString()}</td>
-                  <td className="ro-cell-price">{Number(o.cost).toLocaleString()} ₸</td>
+                  <td className="ro-cell-price">{Math.round(Number(o.cost))} ₸</td>
                 </tr>
               ))}
             </tbody>

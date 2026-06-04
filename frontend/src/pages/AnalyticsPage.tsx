@@ -61,7 +61,7 @@ export function AnalyticsPage() {
     byMaster[o.master_id].orders.push(o);
   });
 
-  const totalCost = filteredOrders.reduce((s, o) => s + Number(o.cost), 0);
+  const totalCost = filteredOrders.reduce((s, o) => s + Math.round(Number(o.cost)), 0);
   const urgentCount = filteredOrders.filter(o => o.priority === 'urgent' || o.priority === 'critical').length;
   const overdueCount = filteredOrders.filter(o => o.deadline && new Date(o.deadline) < new Date() && !['completed', 'cancelled'].includes(o.status_slug)).length;
   const completedCount = filteredOrders.filter(o => o.status_slug === 'completed').length;
@@ -97,12 +97,12 @@ export function AnalyticsPage() {
           <span className="ro-stat-label">Просрочено</span>
         </div>
         <div className="ro-stat-card" style={{ borderLeftColor: '#8b5cf6' }}>
-          <span className="ro-stat-value">{totalCost.toLocaleString()} ₸</span>
+          <span className="ro-stat-value">{totalCost} ₸</span>
           <span className="ro-stat-label">Общая сумма</span>
         </div>
         {report && (
           <div className="ro-stat-card" style={{ borderLeftColor: '#06b6d4' }}>
-            <span className="ro-stat-value">{report.profit.toLocaleString()} ₸</span>
+            <span className="ro-stat-value">{report.profit} ₸</span>
             <span className="ro-stat-label">Прибыль за год</span>
           </div>
         )}
@@ -142,7 +142,7 @@ export function AnalyticsPage() {
           <div className="ro-stats">
             {Object.entries(byMaster).map(([id, data]) => {
               const active = data.orders.filter(o => !['completed', 'cancelled'].includes(o.status_slug)).length;
-              const cost = data.orders.reduce((s, o) => s + Number(o.cost), 0);
+              const cost = data.orders.reduce((s, o) => s + Math.round(Number(o.cost)), 0);
               return (
                 <div key={id} className="ro-stat-card" style={{ borderLeftColor: data.color, background: data.bg }}>
                   <span className="ro-stat-value" style={{ color: data.color, fontSize: 18 }}>{data.masterName}</span>
@@ -150,7 +150,7 @@ export function AnalyticsPage() {
                     <div><span style={{ fontSize: 22, fontWeight: 700 }}>{data.orders.length}</span><span style={{ fontSize: 12, color: '#5f6368', marginLeft: 4 }}>всего</span></div>
                     <div><span style={{ fontSize: 22, fontWeight: 700 }}>{active}</span><span style={{ fontSize: 12, color: '#5f6368', marginLeft: 4 }}>в работе</span></div>
                   </div>
-                  <div style={{ fontSize: 13, color: '#5f6368', marginTop: 4 }}>{cost.toLocaleString()} ₸</div>
+                  <div style={{ fontSize: 13, color: '#5f6368', marginTop: 4 }}>{cost} ₸</div>
                 </div>
               );
             })}
@@ -188,7 +188,7 @@ export function AnalyticsPage() {
                   <td>{o.priority !== 'normal' && <span className={`ro-priority ${o.priority}`}>{o.priority === 'urgent' ? 'Срочно' : 'Критично'}</span>}</td>
                   <td className="ro-cell-client"><strong>{o.client_name}</strong><span>{o.client_phone}</span></td>
                   <td>{o.brand} {o.model}</td>
-                  <td className="ro-cell-price">{Number(o.cost).toLocaleString()} ₸</td>
+                  <td className="ro-cell-price">{Math.round(Number(o.cost))} ₸</td>
                 </tr>
               );
             })}

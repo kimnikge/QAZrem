@@ -35,8 +35,8 @@ export function PartsPage() {
               <tr key={p.id} className={p.quantity <= p.min_quantity ? 'row-warning' : ''}>
                 <td>{p.name}</td>
                 <td><code>{p.sku}</code></td>
-                <td>{Number(p.purchase_price).toLocaleString()} ₸</td>
-                <td>{Number(p.selling_price).toLocaleString()} ₸</td>
+                <td>{Math.round(Number(p.purchase_price))} ₸</td>
+                <td>{Math.round(Number(p.selling_price))} ₸</td>
                 <td><strong>{p.quantity}</strong></td>
                 <td>{p.min_quantity}</td>
               </tr>

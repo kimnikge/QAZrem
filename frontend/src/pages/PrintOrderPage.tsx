@@ -9,7 +9,7 @@ export function PrintOrderPage() {
 
   useEffect(() => {
     if (!id) return;
-    getOrder(Number(id)).then(setOrder).catch(console.error).finally(() => setLoading(false));
+    getOrder(Math.round(Number(id))).then(setOrder).catch(console.error).finally(() => setLoading(false));
   }, [id]);
 
   useEffect(() => {
@@ -32,7 +32,7 @@ export function PrintOrderPage() {
   if (loading) return <div className="loading">Загрузка...</div>;
   if (!order) return <div className="error-message">Заказ не найден</div>;
 
-  const finalCost = Math.max(0, Number(order.cost) - Number(order.discount));
+  const finalCost = Math.max(0, Math.round(Number(order.cost)) - Math.round(Number(order.discount)));
 
   return (
     <div className="print-page">
@@ -92,7 +92,7 @@ export function PrintOrderPage() {
                   <tr key={p.id}>
                     <td>{p.part_name}</td>
                     <td>{p.quantity_used}</td>
-                    <td>{Number(p.selling_price_at_moment).toLocaleString()} ₸</td>
+                    <td>{Math.round(Number(p.selling_price_at_moment))} ₸</td>
                   </tr>
                 ))}
               </tbody>
@@ -103,11 +103,11 @@ export function PrintOrderPage() {
         <div style={{ marginTop: 16, textAlign: 'right' }}>
           <table style={{ width: 'auto', marginLeft: 'auto' }}>
             <tbody>
-              <tr><td><strong>Стоимость</strong></td><td>{Number(order.cost).toLocaleString()} ₸</td></tr>
-              {Number(order.discount) > 0 && <tr><td><strong>Скидка</strong></td><td>−{Number(order.discount).toLocaleString()} ₸</td></tr>}
-              <tr><td><strong>Итого</strong></td><td><strong>{finalCost.toLocaleString()} ₸</strong></td></tr>
-              <tr><td><strong>Предоплата</strong></td><td>{Number(order.prepaid).toLocaleString()} ₸</td></tr>
-              <tr><td><strong>К оплате</strong></td><td><strong>{(finalCost - Number(order.prepaid)).toLocaleString()} ₸</strong></td></tr>
+              <tr><td><strong>Стоимость</strong></td><td>{Math.round(Number(order.cost))} ₸</td></tr>
+              {Math.round(Number(order.discount)) > 0 && <tr><td><strong>Скидка</strong></td><td>−{Math.round(Number(order.discount))} ₸</td></tr>}
+              <tr><td><strong>Итого</strong></td><td><strong>{finalCost} ₸</strong></td></tr>
+              <tr><td><strong>Предоплата</strong></td><td>{Math.round(Number(order.prepaid))} ₸</td></tr>
+              <tr><td><strong>К оплате</strong></td><td><strong>{(finalCost - Math.round(Number(order.prepaid)))} ₸</strong></td></tr>
             </tbody>
           </table>
         </div>

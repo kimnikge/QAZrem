@@ -59,16 +59,16 @@ export function FinancePage() {
           <div className="finance-grid" style={{ marginTop: 16 }}>
             <div className="finance-card">
               <span className="finance-label">Доходы</span>
-              <span className="finance-value positive">{report.income.toLocaleString()} ₸</span>
+              <span className="finance-value positive">{report.income} ₸</span>
             </div>
             <div className="finance-card">
               <span className="finance-label">Расходы</span>
-              <span className="finance-value negative">{report.expenses.total.toLocaleString()} ₸</span>
+              <span className="finance-value negative">{report.expenses.total} ₸</span>
             </div>
             <div className="finance-card">
               <span className="finance-label">Прибыль</span>
               <span className={`finance-value ${report.profit >= 0 ? 'positive' : 'negative'}`}>
-                {report.profit.toLocaleString()} ₸
+                {report.profit} ₸
               </span>
             </div>
             <div className="finance-card">
@@ -78,8 +78,8 @@ export function FinancePage() {
           </div>
           <div className="detail-card">
             <h3>Детали</h3>
-            <div className="detail-row"><span>Прямые расходы</span><strong>{report.expenses.direct.toLocaleString()} ₸</strong></div>
-            <div className="detail-row"><span>Себестоимость запчастей</span><strong>{report.expenses.parts_cost.toLocaleString()} ₸</strong></div>
+            <div className="detail-row"><span>Прямые расходы</span><strong>{report.expenses.direct} ₸</strong></div>
+            <div className="detail-row"><span>Себестоимость запчастей</span><strong>{report.expenses.parts_cost} ₸</strong></div>
             <div className="detail-row"><span>Период</span><strong>Январь — Декабрь {new Date().getFullYear()}</strong></div>
           </div>
         </>
@@ -113,7 +113,7 @@ export function FinancePage() {
                 <select
                   className="filter-select"
                   value={masterFilter}
-                  onChange={e => setMasterFilter(e.target.value ? Number(e.target.value) : '')}
+                  onChange={e => setMasterFilter(e.target.value ? Math.round(Number(e.target.value)) : '')}
                 >
                   <option value="">Все</option>
                   {masters.map(m => (
@@ -136,11 +136,11 @@ export function FinancePage() {
                       <div style={{ display: 'flex', gap: 16 }}>
                         <div style={{ textAlign: 'right' }}>
                           <div style={{ fontSize: 12, color: '#5f6368' }}>Прибыль</div>
-                          <div style={{ fontSize: 18, fontWeight: 700, color: '#22c55e' }}>{m.total_profit.toLocaleString()} ₸</div>
+                          <div style={{ fontSize: 18, fontWeight: 700, color: '#22c55e' }}>{m.total_profit} ₸</div>
                         </div>
                         <div style={{ textAlign: 'right' }}>
                           <div style={{ fontSize: 12, color: '#5f6368' }}>К выплате</div>
-                          <div style={{ fontSize: 18, fontWeight: 700, color: '#1a73e8' }}>{m.total_payout.toLocaleString()} ₸</div>
+                          <div style={{ fontSize: 18, fontWeight: 700, color: '#1a73e8' }}>{m.total_payout} ₸</div>
                         </div>
                       </div>
                     </div>
@@ -162,12 +162,12 @@ export function FinancePage() {
                           {m.orders.map(o => (
                             <tr key={o.order_id}>
                               <td className="ro-cell-id">#{o.order_id}</td>
-                              <td>{Number(o.cost).toLocaleString()} ₸</td>
-                              <td>{Number(o.discount).toLocaleString()} ₸</td>
-                              <td>{Number(o.parts_cost).toLocaleString()} ₸</td>
-                              <td style={{ fontWeight: 600, color: '#22c55e' }}>{Number(o.profit).toLocaleString()} ₸</td>
+                              <td>{Math.round(Number(o.cost))} ₸</td>
+                              <td>{Math.round(Number(o.discount))} ₸</td>
+                              <td>{Math.round(Number(o.parts_cost))} ₸</td>
+                              <td style={{ fontWeight: 600, color: '#22c55e' }}>{Math.round(Number(o.profit))} ₸</td>
                               <td>{o.master_commission_pct}%</td>
-                              <td style={{ fontWeight: 700, color: '#1a73e8' }}>{Number(o.master_payout).toLocaleString()} ₸</td>
+                              <td style={{ fontWeight: 700, color: '#1a73e8' }}>{Math.round(Number(o.master_payout))} ₸</td>
                             </tr>
                           ))}
                         </tbody>

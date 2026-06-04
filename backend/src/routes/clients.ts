@@ -8,13 +8,14 @@ export const clientsRouter = Router();
 const createClientSchema = z.object({
   name: z.string().min(2, 'Имя минимум 2 символа'),
   phone: z.string().min(5, 'Телефон минимум 5 символов'),
-  email: z.string().email('Некорректный email').optional().or(z.literal(''))
+  email: z.string().email('Некорректный email').optional().or(z.literal('')),
+  address: z.string().optional().or(z.literal(''))
 });
 
 clientsRouter.get('/', async (_req, res, next) => {
   try {
     const result = await pool.query(
-      `SELECT id, name, phone, email, total_spent, created_at
+      `SELECT id, name, phone, email, address, total_spent, created_at
        FROM clients ORDER BY created_at DESC`
     );
     res.json(result.rows);
@@ -27,7 +28,7 @@ clientsRouter.get('/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
     const result = await pool.query(
-      `SELECT id, name, phone, email, total_spent, created_at
+      `SELECT id, name, phone, email, address, total_spent, created_at
        FROM clients WHERE id = $1`,
       [id]
     );
@@ -42,10 +43,10 @@ clientsRouter.post('/', async (req, res, next) => {
   try {
     const input = createClientSchema.parse(req.body);
     const result = await pool.query(
-      `INSERT INTO clients (name, phone, email)
-       VALUES ($1, $2, $3)
-       RETURNING id, name, phone, email, total_spent, created_at`,
-      [input.name, input.phone, input.email || null]
+      `INSERT INTO clients (name, phone, email, address)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, name, phone, email, address, total_spent, created_at`,
+      [input.name, input.phone, input.email || null, input.address || null]
     );
     res.status(201).json(result.rows[0]);
   } catch (error) {
@@ -77,7 +78,7 @@ clientsRouter.patch('/:id', async (req, res, next) => {
     values.push(id);
     const result = await pool.query(
       `UPDATE clients SET ${fields.join(', ')} WHERE id = $${idx}
-       RETURNING id, name, phone, email, total_spent, created_at`,
+       RETURNING id, name, phone, email, address, total_spent, created_at`,
       values
     );
 

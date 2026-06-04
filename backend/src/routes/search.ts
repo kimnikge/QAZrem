@@ -22,6 +22,7 @@ searchRouter.get('/', async (req, res, next) => {
           c.name AS client_name,
           c.phone AS client_phone,
           c.email AS client_email,
+          c.address AS client_address,
           c.total_spent AS client_total_spent,
           c.created_at AS client_created_at,
           d.id AS device_id,
@@ -51,6 +52,7 @@ searchRouter.get('/', async (req, res, next) => {
         name: string;
         phone: string;
         email: string | null;
+        address: string | null;
         totalSpent: number;
         createdAt: string;
       };
@@ -72,6 +74,7 @@ searchRouter.get('/', async (req, res, next) => {
             name: row.client_name,
             phone: row.client_phone,
             email: row.client_email,
+            address: row.client_address,
             totalSpent: Number(row.client_total_spent),
             createdAt: row.client_created_at
           },

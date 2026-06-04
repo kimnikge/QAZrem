@@ -2,6 +2,8 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Layout } from './components/Layout';
 import { LoginPage } from './pages/LoginPage';
+import { AnalyticsPage } from './pages/AnalyticsPage';
+import { SettingsPage } from './pages/SettingsPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { CreateOrderPage } from './pages/CreateOrderPage';
 import { OrderDetailPage } from './pages/OrderDetailPage';
@@ -26,6 +28,8 @@ function AppRoutes() {
         <Route path="/orders/:id" element={<OrderDetailPage />} />
         <Route path="/parts" element={<PartsPage />} />
         <Route path="/finance" element={<FinancePage />} />
+        <Route path="/analytics" element={<AnalyticsPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

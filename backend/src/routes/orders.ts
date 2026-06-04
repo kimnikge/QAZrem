@@ -18,7 +18,8 @@ const createOrderWithNewDeviceSchema = z.object({
   client: z.object({
     name: z.string().min(2),
     phone: z.string().min(5),
-    email: z.string().optional().or(z.literal(''))
+    email: z.string().optional().or(z.literal('')),
+    address: z.string().optional().or(z.literal(''))
   }),
   device: z.object({
     brand: z.string().min(1),
@@ -28,13 +29,21 @@ const createOrderWithNewDeviceSchema = z.object({
     color: z.string().optional().or(z.literal(''))
   }),
   issue_description: z.string().min(5, 'Опишите проблему минимум 5 символов'),
-  master_id: z.number().int().positive().optional()
+  master_id: z.number().int().positive().optional(),
+  deadline: z.string().optional(),
+  priority: z.enum(['normal', 'urgent', 'critical']).optional(),
+  source: z.string().optional(),
+  estimated_cost: z.number().nonnegative().optional()
 });
 
 const createOrderWithExistingDeviceSchema = z.object({
   device_id: z.number().int().positive(),
   issue_description: z.string().min(5),
-  master_id: z.number().int().positive().optional()
+  master_id: z.number().int().positive().optional(),
+  deadline: z.string().optional(),
+  priority: z.enum(['normal', 'urgent', 'critical']).optional(),
+  source: z.string().optional(),
+  estimated_cost: z.number().nonnegative().optional()
 });
 
 const updateStatusSchema = z.object({
@@ -71,11 +80,12 @@ ordersRouter.get('/', async (req, res, next) => {
       SELECT
         o.id, o.device_id, o.master_id, o.status_id,
         o.issue_description, o.diagnosis,
-        o.cost, o.prepaid, o.internal_comment,
+        o.cost, o.estimated_cost, o.prepaid, o.internal_comment,
+        o.deadline, o.status_deadline, o.priority, o.source,
         o.created_at, o.completed_at,
         os.name AS status_name, os.slug AS status_slug,
         d.brand, d.model, d.imei,
-        c.id AS client_id, c.name AS client_name, c.phone AS client_phone
+        c.id AS client_id, c.name AS client_name, c.phone AS client_phone, c.address AS client_address
       FROM orders o
       JOIN order_statuses os ON os.id = o.status_id
       JOIN devices d ON d.id = o.device_id
@@ -133,7 +143,7 @@ ordersRouter.get('/:id', async (req, res, next) => {
       `SELECT
         o.*, os.name AS status_name, os.slug AS status_slug, os.is_final,
         d.brand, d.model, d.imei, d.serial_number, d.color,
-        c.id AS client_id, c.name AS client_name, c.phone AS client_phone, c.email AS client_email,
+        c.id AS client_id, c.name AS client_name, c.phone AS client_phone, c.email AS client_email, c.address AS client_address,
         u.name AS master_name
       FROM orders o
       JOIN order_statuses os ON os.id = o.status_id
@@ -220,9 +230,13 @@ ordersRouter.get('/:id/statuses', async (req, res, next) => {
 // ============================================================
 const updateOrderSchema = z.object({
   cost: z.number().nonnegative().optional(),
+  estimated_cost: z.number().nonnegative().optional(),
   diagnosis: z.string().optional(),
   internal_comment: z.string().optional(),
-  master_id: z.number().int().positive().optional()
+  master_id: z.number().int().positive().optional(),
+  deadline: z.string().optional(),
+  priority: z.enum(['normal', 'urgent', 'critical']).optional(),
+  source: z.string().optional()
 });
 
 ordersRouter.patch('/:id', requireRole('admin', 'master'), async (req, res, next) => {
@@ -293,10 +307,10 @@ ordersRouter.post('/', requireRole('admin', 'reception'), async (req, res, next)
       } else {
         // Создаём нового клиента
         clientResult = await client.query(
-          `INSERT INTO clients (name, phone, email)
-           VALUES ($1, $2, $3)
+          `INSERT INTO clients (name, phone, email, address)
+           VALUES ($1, $2, $3, $4)
            RETURNING id`,
-          [input.client.name, input.client.phone, input.client.email || null]
+          [input.client.name, input.client.phone, input.client.email || null, input.client.address || null]
         );
         clientId = clientResult.rows[0].id;
       }
@@ -328,10 +342,19 @@ ordersRouter.post('/', requireRole('admin', 'reception'), async (req, res, next)
 
     // Создаём заказ
     const orderResult = await client.query(
-      `INSERT INTO orders (device_id, master_id, status_id, issue_description)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO orders (device_id, master_id, status_id, issue_description, deadline, priority, source, estimated_cost)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING id`,
-      [deviceId, masterId, newStatusId, req.body.issue_description]
+      [
+        deviceId,
+        masterId,
+        newStatusId,
+        req.body.issue_description,
+        req.body.deadline || null,
+        req.body.priority || 'normal',
+        req.body.source || null,
+        req.body.estimated_cost || 0
+      ]
     );
     const orderId = orderResult.rows[0].id;
 

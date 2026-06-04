@@ -86,6 +86,8 @@ export function DashboardPage() {
               <tr>
                 <th>№</th>
                 <th>Статус</th>
+                <th>Приоритет</th>
+                <th>Срок</th>
                 <th>Клиент</th>
                 <th>Устройство</th>
                 <th>Проблема</th>
@@ -98,6 +100,8 @@ export function DashboardPage() {
                 <tr key={o.id} className="ro-row" onClick={() => navigate(`/orders/${o.id}`)}>
                   <td className="ro-cell-id">#{o.id}</td>
                   <td><span className={`ro-badge ${statusColors[o.status_slug]}`}>{statusLabels[o.status_slug]}</span></td>
+                  <td>{o.priority !== 'normal' && <span className={`ro-priority ${o.priority}`}>{o.priority === 'urgent' ? 'Срочно' : 'Критично'}</span>}</td>
+                  <td className="ro-cell-date">{o.deadline ? new Date(o.deadline).toLocaleDateString() : '-'}</td>
                   <td className="ro-cell-client">
                     <strong>{o.client_name}</strong>
                     <span>{o.client_phone}</span>

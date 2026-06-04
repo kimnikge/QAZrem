@@ -1,0 +1,10 @@
+-- Migration: Add fields for ROAPP parity
+-- Up
+
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS address TEXT;
+
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS deadline TIMESTAMPTZ;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS status_deadline TIMESTAMPTZ;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS estimated_cost DECIMAL(10,2) NOT NULL DEFAULT 0;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS priority VARCHAR(20) NOT NULL DEFAULT 'normal' CHECK (priority IN ('normal', 'urgent', 'critical'));
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS source VARCHAR(50);

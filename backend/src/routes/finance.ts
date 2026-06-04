@@ -73,7 +73,6 @@ financeRouter.get('/report', requireRole('admin'), async (req, res, next) => {
       income,
       paid,
       debt: income - paid,
-      income,
       expenses: {
         direct: directExpenses,
         parts_cost: partsCost,

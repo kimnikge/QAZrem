@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Printer, RefreshCw, Save, PlusCircle } from 'lucide-react';
-import { getOrder, getOrderStatuses, updateOrderStatus, createPayment, getSettings,
+import { ArrowLeft, Printer, RefreshCw, Save, PlusCircle, Trash2 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { getOrder, getOrderStatuses, updateOrderStatus, createPayment, deletePayment, getSettings,
   type OrderDetail, type AvailableStatus, type SettingsData } from '../api';
 
 const statusLabels: Record<string, string> = {
@@ -12,6 +13,7 @@ const statusLabels: Record<string, string> = {
 export function OrderDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const [availableStatuses, setAvailableStatuses] = useState<AvailableStatus[]>([]);
   const [loading, setLoading] = useState(true);
@@ -105,6 +107,16 @@ export function OrderDetailPage() {
     }
   }
 
+  async function handleDeletePayment(paymentId: number) {
+    if (!confirm('Удалить платёж?')) return;
+    try {
+      await deletePayment(paymentId);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Ошибка удаления платежа');
+    }
+  }
+
   async function handleStatusChange(slug: string) {
     try {
       await updateOrderStatus(Math.round(Number(id)), slug);
@@ -115,6 +127,8 @@ export function OrderDetailPage() {
   }
 
   const finalCost = order ? Math.max(0, Math.round(Number(order.cost)) - Math.round(Number(order.discount))) : 0;
+  const totalPaid = order ? order.payments.reduce((s, p) => s + Math.round(Number(p.amount)), 0) : 0;
+  const remaining = finalCost - totalPaid;
 
   if (loading) return <div className="loading">Загрузка...</div>;
   if (error) return <div className="error-message">{error}</div>;
@@ -174,6 +188,22 @@ export function OrderDetailPage() {
               {Math.round(Number(order.discount)) > 0 && <div className="detail-row"><span>Скидка</span><strong style={{ color: '#ef4444' }}>−{Math.round(Number(order.discount))} ₸</strong></div>}
               <div className="detail-row"><span>Итого</span><strong style={{ color: '#1a73e8', fontSize: 18 }}>{finalCost} ₸</strong></div>
               <div className="detail-row"><span>Предоплата</span><strong>{Math.round(Number(order.prepaid))} ₸</strong></div>
+              <div className="detail-row">
+                <span>Оплачено всего</span>
+                <strong style={{ color: totalPaid > 0 ? '#1a73e8' : '#5f6368' }}>{totalPaid} ₸</strong>
+              </div>
+              {remaining > 0 && (
+                <div className="detail-row">
+                  <span style={{ color: '#ef4444', fontWeight: 500 }}>Остаток</span>
+                  <strong style={{ color: '#ef4444', fontSize: 16 }}>{remaining} ₸</strong>
+                </div>
+              )}
+              {remaining <= 0 && (
+                <div className="detail-row">
+                  <span>Остаток</span>
+                  <strong style={{ color: '#22c55e' }}>0 ₸ ✓</strong>
+                </div>
+              )}
               {order.internal_comment && <div className="detail-row"><span>Комментарий</span>{order.internal_comment}</div>}
             </>
           )}
@@ -268,7 +298,18 @@ export function OrderDetailPage() {
               {order.payments.length > 0 && order.payments.map(p => (
                 <div key={p.id} className="detail-row">
                   <span>{p.payment_method_name} {p.is_prepayment ? '(предоплата)' : '(доплата)'}</span>
-                  <strong>{Math.round(Number(p.amount))} ₸</strong>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <strong>{Math.round(Number(p.amount))} ₸</strong>
+                    {user?.role === 'admin' && (
+                      <button
+                        onClick={() => handleDeletePayment(p.id)}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: 2, display: 'flex' }}
+                        title="Удалить платёж"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
               {order.payments.length === 0 && !showPayment && (

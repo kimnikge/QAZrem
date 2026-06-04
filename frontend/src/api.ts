@@ -170,6 +170,10 @@ export function createPayment(data: CreatePaymentInput) {
   });
 }
 
+export function deletePayment(id: number) {
+  return request(`/payments/${id}`, { method: 'DELETE' });
+}
+
 export type MasterPayout = {
   order_id: number;
   cost: string;

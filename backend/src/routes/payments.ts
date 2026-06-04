@@ -82,3 +82,54 @@ paymentsRouter.post('/', requireRole('admin', 'reception'), async (req, res, nex
     dbClient.release();
   }
 });
+
+// DELETE /payments/:id — удаление платежа (админ)
+paymentsRouter.delete('/:id', requireRole('admin'), async (req, res, next) => {
+  const dbClient = await pool.connect();
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) throw new BadRequestError('Некорректный ID платежа');
+
+    // Получаем платёж
+    const payResult = await dbClient.query(
+      `SELECT p.*, o.cost, d.client_id
+       FROM payments p
+       JOIN orders o ON o.id = p.order_id
+       JOIN devices d ON d.id = o.device_id
+       WHERE p.id = $1`,
+      [id]
+    );
+
+    if (payResult.rows.length === 0) throw new NotFoundError('Платёж');
+
+    const pay = payResult.rows[0];
+
+    await dbClient.query('BEGIN');
+
+    // Если предоплата — уменьшаем prepaid в заказе
+    if (pay.is_prepayment) {
+      await dbClient.query(
+        'UPDATE orders SET prepaid = GREATEST(0, prepaid - $1) WHERE id = $2',
+        [pay.amount, pay.order_id]
+      );
+    } else {
+      // Если доплата — уменьшаем total_spent клиента
+      await dbClient.query(
+        'UPDATE clients SET total_spent = GREATEST(0, total_spent - $1) WHERE id = $2',
+        [pay.amount, pay.client_id]
+      );
+    }
+
+    // Удаляем платёж
+    await dbClient.query('DELETE FROM payments WHERE id = $1', [id]);
+
+    await dbClient.query('COMMIT');
+
+    res.json({ success: true });
+  } catch (error) {
+    await dbClient.query('ROLLBACK');
+    next(error);
+  } finally {
+    dbClient.release();
+  }
+});

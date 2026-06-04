@@ -59,7 +59,7 @@ export function search(q: string) {
 export type Order = {
   id: number; device_id: number; master_id: number | null;
   status_id: number; issue_description: string; diagnosis: string | null;
-  cost: string; estimated_cost: string; prepaid: string;
+  cost: string; estimated_cost: string; discount: string; prepaid: string;
   deadline: string | null; status_deadline: string | null;
   priority: string; source: string | null; internal_comment: string | null;
   created_at: string; completed_at: string | null;
@@ -96,6 +96,7 @@ export type CreateOrderInput = {
   device: { brand: string; model: string; imei: string };
   issue_description: string;
   master_id?: number;
+  discount?: number;
 };
 
 export function createOrder(input: CreateOrderInput) {

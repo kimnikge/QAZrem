@@ -33,7 +33,8 @@ const createOrderWithNewDeviceSchema = z.object({
   deadline: z.string().optional(),
   priority: z.enum(['normal', 'urgent', 'critical']).optional(),
   source: z.string().optional(),
-  estimated_cost: z.number().nonnegative().optional()
+  estimated_cost: z.number().nonnegative().optional(),
+  discount: z.number().nonnegative().optional()
 });
 
 const createOrderWithExistingDeviceSchema = z.object({
@@ -43,7 +44,8 @@ const createOrderWithExistingDeviceSchema = z.object({
   deadline: z.string().optional(),
   priority: z.enum(['normal', 'urgent', 'critical']).optional(),
   source: z.string().optional(),
-  estimated_cost: z.number().nonnegative().optional()
+  estimated_cost: z.number().nonnegative().optional(),
+  discount: z.number().nonnegative().optional()
 });
 
 const updateStatusSchema = z.object({
@@ -80,7 +82,7 @@ ordersRouter.get('/', async (req, res, next) => {
       SELECT
         o.id, o.device_id, o.master_id, o.status_id,
         o.issue_description, o.diagnosis,
-        o.cost, o.estimated_cost, o.prepaid, o.internal_comment,
+        o.cost, o.estimated_cost, o.prepaid, o.discount, o.internal_comment,
         o.deadline, o.status_deadline, o.priority, o.source,
         o.created_at, o.completed_at,
         os.name AS status_name, os.slug AS status_slug,
@@ -233,6 +235,7 @@ ordersRouter.get('/:id/statuses', async (req, res, next) => {
 const updateOrderSchema = z.object({
   cost: z.number().nonnegative().optional(),
   estimated_cost: z.number().nonnegative().optional(),
+  discount: z.number().nonnegative().optional(),
   diagnosis: z.string().optional(),
   internal_comment: z.string().optional(),
   master_id: z.number().int().positive().optional(),
@@ -344,8 +347,8 @@ ordersRouter.post('/', requireRole('admin', 'reception'), async (req, res, next)
 
     // Создаём заказ
     const orderResult = await client.query(
-      `INSERT INTO orders (device_id, master_id, status_id, issue_description, deadline, priority, source, estimated_cost)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `INSERT INTO orders (device_id, master_id, status_id, issue_description, deadline, priority, source, estimated_cost, discount)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING id`,
       [
         deviceId,
@@ -355,7 +358,8 @@ ordersRouter.post('/', requireRole('admin', 'reception'), async (req, res, next)
         req.body.deadline || null,
         req.body.priority || 'normal',
         req.body.source || null,
-        req.body.estimated_cost || 0
+        req.body.estimated_cost || 0,
+        req.body.discount || 0
       ]
     );
     const orderId = orderResult.rows[0].id;

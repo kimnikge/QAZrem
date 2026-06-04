@@ -120,9 +120,10 @@ financeRouter.get('/report', requireRole('admin'), async (req, res, next) => {
        WHERE e.created_at >= $1 AND e.created_at <= $2
        UNION ALL
        SELECT 'part' AS item_type, op.id, (op.purchase_price_at_moment * op.quantity_used) AS amount,
-              'Запчасть' AS category_name, op.part_name AS description, o.completed_at AS created_at,
-              op.part_name, op.quantity_used, op.purchase_price_at_moment, o.id AS order_id
+              'Запчасть' AS category_name, p.name AS description, o.completed_at AS created_at,
+              p.name AS part_name, op.quantity_used, op.purchase_price_at_moment, o.id AS order_id
        FROM order_parts op
+       JOIN parts p ON p.id = op.part_id
        JOIN orders o ON o.id = op.order_id
        WHERE o.completed_at >= $1 AND o.completed_at <= $2
        ORDER BY created_at DESC`,

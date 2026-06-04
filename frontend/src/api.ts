@@ -156,6 +156,20 @@ export function getFinanceReport(from: string, to: string) {
   return request<FinanceReport>(`/finance/report?from=${from}&to=${to}`);
 }
 
+export type CreatePaymentInput = {
+  order_id: number;
+  amount: number;
+  payment_method_id: number;
+  is_prepayment?: boolean;
+};
+
+export function createPayment(data: CreatePaymentInput) {
+  return request<{ id: number }>('/payments', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  });
+}
+
 export type MasterPayout = {
   order_id: number;
   cost: string;

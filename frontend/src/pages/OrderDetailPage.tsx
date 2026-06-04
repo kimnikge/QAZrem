@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Printer, RefreshCw, Save } from 'lucide-react';
-import { getOrder, getOrderStatuses, updateOrderStatus, type OrderDetail, type AvailableStatus } from '../api';
+import { ArrowLeft, Printer, RefreshCw, Save, PlusCircle } from 'lucide-react';
+import { getOrder, getOrderStatuses, updateOrderStatus, createPayment, getSettings,
+  type OrderDetail, type AvailableStatus, type SettingsData } from '../api';
 
 const statusLabels: Record<string, string> = {
   new: 'Новая', diagnosis: 'Диагностика', waiting_parts: 'Ожидание запчасти',
@@ -24,6 +25,14 @@ export function OrderDetailPage() {
   const [editDiagnosis, setEditDiagnosis] = useState('');
   const [editComment, setEditComment] = useState('');
 
+  // Payment form
+  const [showPayment, setShowPayment] = useState(false);
+  const [payAmount, setPayAmount] = useState('');
+  const [payMethod, setPayMethod] = useState<number>(0);
+  const [payPrepayment, setPayPrepayment] = useState(false);
+  const [paySaving, setPaySaving] = useState(false);
+  const [settings, setSettings] = useState<SettingsData | null>(null);
+
   async function load() {
     if (!id) return;
     setLoading(true);
@@ -38,6 +47,7 @@ export function OrderDetailPage() {
       setEditDiscount(String(Math.round(Number(o.discount))));
       setEditDiagnosis(o.diagnosis || '');
       setEditComment(o.internal_comment || '');
+      getSettings().then(setSettings).catch(() => {});
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка загрузки');
     } finally {
@@ -71,6 +81,27 @@ export function OrderDetailPage() {
       setError(err instanceof Error ? err.message : 'Ошибка сохранения');
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleAddPayment() {
+    if (!id || !payAmount || !payMethod) return;
+    setPaySaving(true);
+    try {
+      await createPayment({
+        order_id: Math.round(Number(id)),
+        amount: Math.round(Number(payAmount)),
+        payment_method_id: payMethod,
+        is_prepayment: payPrepayment
+      });
+      setShowPayment(false);
+      setPayAmount('');
+      setPayPrepayment(false);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Ошибка приёма платежа');
+    } finally {
+      setPaySaving(false);
     }
   }
 
@@ -180,17 +211,72 @@ export function OrderDetailPage() {
               </div>
             )}
 
-            {order.payments.length > 0 && (
-              <div className="detail-card">
-                <h3>Платежи</h3>
-                {order.payments.map(p => (
-                  <div key={p.id} className="detail-row">
-                    <span>{p.payment_method_name} {p.is_prepayment ? '(предоплата)' : '(доплата)'}</span>
-                    <strong>{Math.round(Number(p.amount))} ₸</strong>
-                  </div>
-                ))}
+            <div className="detail-card">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: order.payments.length === 0 && !showPayment ? 0 : 12 }}>
+                <h3 style={{ margin: 0 }}>Платежи</h3>
+                <button className="btn-icon" onClick={() => { setShowPayment(!showPayment); setPayMethod(settings?.payment_methods[0]?.id || 0); }} title="Добавить платёж">
+                  <PlusCircle size={18} />
+                </button>
               </div>
-            )}
+
+              {showPayment && (
+                <div style={{ background: '#f8f9fa', padding: 12, borderRadius: 8, marginBottom: 12 }}>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'end' }}>
+                    <div>
+                      <div style={{ fontSize: 12, color: '#5f6368', marginBottom: 4 }}>Сумма</div>
+                      <input
+                        type="number"
+                        value={payAmount}
+                        onChange={e => setPayAmount(e.target.value)}
+                        placeholder="Сумма"
+                        style={{ width: 120, padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14 }}
+                      />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 12, color: '#5f6368', marginBottom: 4 }}>Способ</div>
+                      <select
+                        value={payMethod}
+                        onChange={e => setPayMethod(Math.round(Number(e.target.value)))}
+                        style={{ padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14 }}
+                      >
+                        {settings?.payment_methods.map(m => (
+                          <option key={m.id} value={m.id}>{m.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingTop: 16 }}>
+                      <input
+                        type="checkbox"
+                        id="prepay"
+                        checked={payPrepayment}
+                        onChange={e => setPayPrepayment(e.target.checked)}
+                      />
+                      <label htmlFor="prepay" style={{ fontSize: 13, color: '#5f6368', cursor: 'pointer' }}>Предоплата</label>
+                    </div>
+                    <button
+                      className="btn-primary"
+                      onClick={handleAddPayment}
+                      disabled={paySaving || !payAmount || !payMethod}
+                      style={{ padding: '8px 14px', fontSize: 13 }}
+                    >
+                      {paySaving ? '...' : 'Провести'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {order.payments.length > 0 && order.payments.map(p => (
+                <div key={p.id} className="detail-row">
+                  <span>{p.payment_method_name} {p.is_prepayment ? '(предоплата)' : '(доплата)'}</span>
+                  <strong>{Math.round(Number(p.amount))} ₸</strong>
+                </div>
+              ))}
+              {order.payments.length === 0 && !showPayment && (
+                <div style={{ textAlign: 'center', padding: '12px 0', color: '#5f6368', fontSize: 13 }}>
+                  Нет платежей. Нажмите + чтобы добавить.
+                </div>
+              )}
+            </div>
 
             <div className="detail-card detail-card-full">
               <h3>История</h3>

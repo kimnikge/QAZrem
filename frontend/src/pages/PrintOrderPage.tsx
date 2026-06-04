@@ -13,7 +13,9 @@ export function PrintOrderPage() {
   }, [id]);
 
   useEffect(() => {
-    if (!loading && order) window.print();
+    if (!loading && order) {
+      setTimeout(() => window.print(), 500);
+    }
   }, [loading, order]);
 
   const statusLabels: Record<string, string> = {
@@ -21,8 +23,14 @@ export function PrintOrderPage() {
     repair: 'Ремонт', ready: 'Готов к выдаче', completed: 'Выдан', cancelled: 'Отказ'
   };
 
+  // Скрываем сайдбар через Layout
+  useEffect(() => {
+    document.body.classList.add('print-mode');
+    return () => document.body.classList.remove('print-mode');
+  }, []);
+
   if (loading) return <div className="loading">Загрузка...</div>;
-  if (!order) return <div>Заказ не найден</div>;
+  if (!order) return <div className="error-message">Заказ не найден</div>;
 
   const finalCost = Math.max(0, Number(order.cost) - Number(order.discount));
 

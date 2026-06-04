@@ -96,7 +96,7 @@ export function OrderDetailPage() {
         <h2>Заказ №{order.id}</h2>
         <div style={{ display: 'flex', gap: 8 }}>
           <button className="btn-icon" onClick={load}><RefreshCw size={18} /></button>
-          <button className="btn-icon" onClick={() => window.open(`/print-order/${order.id}`, '_blank')}><Printer size={18} /></button>
+          <button className="btn-icon" onClick={() => window.location.href = `/print-order/${order.id}`}><Printer size={18} /></button>
           {editing ? (
             <button className="btn-primary" onClick={handleSave} disabled={saving}>
               <Save size={16} /> {saving ? 'Сохранение...' : 'Сохранить'}

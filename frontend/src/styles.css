@@ -214,6 +214,10 @@ body {
 .ro-cell-date { color: var(--text-muted); font-size: 13px; white-space: nowrap; }
 .ro-cell-price { font-weight: 600; text-align: right; white-space: nowrap; }
 
+/* Print mode — hide sidebar */
+body.print-mode .sidebar { display: none; }
+body.print-mode .main-content { margin-left: 0; max-width: 100%; width: 100%; }
+
 /* Priority badges */
 .ro-priority { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
 .ro-priority.urgent { background: #fef7e0; color: #e37400; }

@@ -138,6 +138,10 @@ export function getMasters() {
   return request<{ id: number; name: string }[]>('/users/masters');
 }
 
+export function getAllUsers() {
+  return request<Array<{ id: number; name: string; login: string; role: string }>>('/users');
+}
+
 // --- Settings ---
 export type SettingsData = {
   order_statuses: Array<{ id: number; name: string; slug: string; order: number; is_final: boolean }>;

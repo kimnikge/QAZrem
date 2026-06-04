@@ -23,11 +23,11 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={isAuthenticated ? <Navigate to="/" replace /> : <LoginPage />} />
+      <Route path="/print-order/:id" element={<ProtectedRoute><PrintOrderPage /></ProtectedRoute>} />
       <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route path="/" element={<DashboardPage />} />
         <Route path="/create-order" element={<CreateOrderPage />} />
         <Route path="/orders/:id" element={<OrderDetailPage />} />
-        <Route path="/print-order/:id" element={<PrintOrderPage />} />
         <Route path="/parts" element={<PartsPage />} />
         <Route path="/finance" element={<FinancePage />} />
         <Route path="/analytics" element={<AnalyticsPage />} />

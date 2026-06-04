@@ -20,11 +20,10 @@ financeRouter.get('/report', requireRole('admin'), async (req, res, next) => {
     const fromDate = from || '1970-01-01';
     const toDate = to || '2999-12-31';
 
-    // Доходы: сумма платежей по завершённым заказам
+    // Доходы: стоимость завершённых заказов (cost - discount)
     const incomeResult = await pool.query(
-      `SELECT COALESCE(SUM(p.amount), 0) AS total
-       FROM payments p
-       JOIN orders o ON o.id = p.order_id
+      `SELECT COALESCE(SUM(o.cost - o.discount), 0) AS total
+       FROM orders o
        WHERE o.completed_at IS NOT NULL
          AND o.completed_at >= $1
          AND o.completed_at <= $2`,

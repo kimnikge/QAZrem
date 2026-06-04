@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { pool } from '../db/pool.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
+import type { QueryResult } from 'pg';
 
 export const financeRouter = Router();
 
@@ -60,6 +61,74 @@ financeRouter.get('/report', requireRole('admin'), async (req, res, next) => {
     const totalExpenses = directExpenses + partsCost;
     const profit = income - totalExpenses;
 
+    // Детализация: заказы, из которых состоит income
+    const incomeOrdersResult = await pool.query(
+      `SELECT o.id, o.cost, o.discount, o.completed_at,
+              c.name AS client_name, d.brand, d.model
+       FROM orders o
+       JOIN devices d ON d.id = o.device_id
+       JOIN clients c ON c.id = d.client_id
+       WHERE o.completed_at IS NOT NULL
+         AND o.completed_at >= $1
+         AND o.completed_at <= $2
+       ORDER BY o.completed_at DESC`,
+      [fromDate, toDate]
+    );
+
+    // Детализация: платежи для paid
+    const paidOrdersResult = await pool.query(
+      `SELECT p.id AS payment_id, p.amount, p.payment_method_id, pm.name AS payment_method_name,
+              p.order_id, o.completed_at, c.name AS client_name
+       FROM payments p
+       JOIN orders o ON o.id = p.order_id
+       JOIN devices d ON d.id = o.device_id
+       JOIN clients c ON c.id = d.client_id
+       LEFT JOIN payment_methods pm ON pm.id = p.payment_method_id
+       WHERE o.completed_at IS NOT NULL
+         AND o.completed_at >= $1
+         AND o.completed_at <= $2
+       ORDER BY o.completed_at DESC`,
+      [fromDate, toDate]
+    );
+
+    // Детализация: заказы с долгом (income - paid > 0)
+    const debtOrdersResult = await pool.query(
+      `SELECT o.id, o.cost, o.discount, o.completed_at,
+              c.name AS client_name, d.brand, d.model,
+              COALESCE(payments.paid_total, 0) AS paid_total
+       FROM orders o
+       JOIN devices d ON d.id = o.device_id
+       JOIN clients c ON c.id = d.client_id
+       LEFT JOIN (
+         SELECT order_id, SUM(amount) AS paid_total
+         FROM payments
+         GROUP BY order_id
+       ) payments ON payments.order_id = o.id
+       WHERE o.completed_at IS NOT NULL
+         AND o.completed_at >= $1
+         AND o.completed_at <= $2
+       ORDER BY (o.cost - o.discount - COALESCE(payments.paid_total, 0)) DESC`,
+      [fromDate, toDate]
+    );
+
+    // Детализация: расходы (expenses + order_parts)
+    const expenseItemsResult = await pool.query(
+      `SELECT 'expense' AS item_type, e.id, e.amount, ec.name AS category_name, e.description, e.created_at,
+              NULL AS part_name, NULL AS quantity_used, NULL AS purchase_price, NULL AS order_id
+       FROM expenses e
+       LEFT JOIN expense_categories ec ON ec.id = e.category_id
+       WHERE e.created_at >= $1 AND e.created_at <= $2
+       UNION ALL
+       SELECT 'part' AS item_type, op.id, (op.purchase_price_at_moment * op.quantity_used) AS amount,
+              'Запчасть' AS category_name, op.part_name AS description, o.completed_at AS created_at,
+              op.part_name, op.quantity_used, op.purchase_price_at_moment, o.id AS order_id
+       FROM order_parts op
+       JOIN orders o ON o.id = op.order_id
+       WHERE o.completed_at >= $1 AND o.completed_at <= $2
+       ORDER BY created_at DESC`,
+      [fromDate, toDate]
+    );
+
     // Количество завершённых заказов
     const ordersResult = await pool.query(
       `SELECT COUNT(*)::int AS count
@@ -71,13 +140,59 @@ financeRouter.get('/report', requireRole('admin'), async (req, res, next) => {
     res.json({
       period: { from: fromDate, to: toDate },
       income,
+      income_orders: incomeOrdersResult.rows.map(r => ({
+        id: r.id,
+        client_name: r.client_name,
+        brand: r.brand,
+        model: r.model,
+        cost: Number(r.cost),
+        discount: Number(r.discount),
+        completed_at: r.completed_at
+      })),
       paid,
+      paid_orders: paidOrdersResult.rows.map(r => ({
+        order_id: r.order_id,
+        amount: Number(r.amount),
+        payment_method_name: r.payment_method_name,
+        client_name: r.client_name,
+        completed_at: r.completed_at
+      })),
       debt: income - paid,
+      debt_orders: debtOrdersResult.rows.map(r => {
+        const cost = Number(r.cost);
+        const discount = Number(r.discount);
+        const paidTotal = Number(r.paid_total);
+        return {
+          id: r.id,
+          client_name: r.client_name,
+          brand: r.brand,
+          model: r.model,
+          cost: cost,
+          discount: discount,
+          paid_total: paidTotal,
+          balance: cost - discount - paidTotal,
+          completed_at: r.completed_at
+        };
+      }),
       expenses: {
         direct: directExpenses,
         parts_cost: partsCost,
         total: totalExpenses
       },
+      expense_items: expenseItemsResult.rows.map(r => ({
+        type: r.item_type,
+        id: r.id,
+        amount: Number(r.amount),
+        category_name: r.category_name,
+        description: r.description,
+        created_at: r.created_at,
+        ...(r.item_type === 'part' ? {
+          part_name: r.part_name,
+          quantity_used: Number(r.quantity_used),
+          purchase_price: Number(r.purchase_price),
+          order_id: r.order_id
+        } : {})
+      })),
       profit,
       completed_orders: ordersResult.rows[0].count
     });

@@ -126,8 +126,29 @@ export function getParts(lowStock?: boolean) {
 // --- Finance ---
 export type FinanceReport = {
   period: { from: string; to: string };
-  income: number; paid: number; debt: number;
+  income: number;
+  income_orders: Array<{
+    id: number; client_name: string; brand: string; model: string;
+    cost: number; discount: number; completed_at: string;
+  }>;
+  paid: number;
+  paid_orders: Array<{
+    order_id: number; amount: number; payment_method_name: string;
+    client_name: string; completed_at: string;
+  }>;
+  debt: number;
+  debt_orders: Array<{
+    id: number; client_name: string; brand: string; model: string;
+    cost: number; discount: number; paid_total: number;
+    balance: number; completed_at: string;
+  }>;
   expenses: { direct: number; parts_cost: number; total: number };
+  expense_items: Array<{
+    type: 'expense' | 'part'; id: number; amount: number;
+    category_name: string; description: string; created_at: string;
+    part_name?: string; quantity_used?: number;
+    purchase_price?: number; order_id?: number;
+  }>;
   profit: number; completed_orders: number;
 };
 

@@ -1,5 +1,8 @@
 import cors from 'cors';
 import express from 'express';
+import helmet from 'helmet';
+import morgan from 'morgan';
+import rateLimit from 'express-rate-limit';
 import { ZodError } from 'zod';
 import { env } from './config/env.js';
 import { AppError } from './lib/errors.js';
@@ -17,11 +20,28 @@ import { usersRouter } from './routes/users.js';
 
 export const app = express();
 
+// Безопасность
+app.use(helmet());
 app.use(cors({ origin: env.API_CORS_ORIGIN }));
-app.use(express.json());
+
+// Логгирование запросов
+app.use(morgan('short'));
+
+// Ограничение body (10 MB максимум)
+app.use(express.json({ limit: '10mb' }));
+
+// Rate limiting на login (макс 10 попыток в минуту)
+const authLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  message: { error: 'Слишком много попыток. Повторите через минуту' },
+  standardHeaders: true,
+  legacyHeaders: false
+});
 
 // Публичные роуты
 app.use('/health', healthRouter);
+app.use('/auth/login', authLimiter);
 app.use('/auth', authRouter);
 
 // Защищённые роуты (авторизация внутри каждого роута)

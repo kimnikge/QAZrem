@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { env } from '../config/env.js';
 import { pool } from '../db/pool.js';
 import { BadRequestError, ConflictError, UnauthorizedError } from '../lib/errors.js';
+import { requireAuth, requireRole } from '../middleware/auth.js';
 
 export const authRouter = Router();
 
@@ -23,7 +24,8 @@ const registerSchema = z.object({
   role: z.enum(['admin', 'master', 'reception'])
 });
 
-authRouter.post('/register', async (req, res, next) => {
+// Регистрация — только для админов (закрытая система, непубличная)
+authRouter.post('/register', requireAuth, requireRole('admin'), async (req, res, next) => {
   try {
     const input = registerSchema.parse(req.body);
 
@@ -42,13 +44,8 @@ authRouter.post('/register', async (req, res, next) => {
     );
 
     const user = result.rows[0];
-    const token = jwt.sign(
-      { userId: user.id, role: user.role },
-      JWT_SECRET,
-      { expiresIn: TOKEN_EXPIRY }
-    );
 
-    res.status(201).json({ user, token });
+    res.status(201).json({ user });
   } catch (error) {
     next(error);
   }

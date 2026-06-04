@@ -60,12 +60,14 @@ export function PrintOrderPage() {
         </div>
 
         <table>
-          <tr><td style={{ width: 200 }}><strong>Клиент</strong></td><td>{order.client_name}</td></tr>
-          <tr><td><strong>Телефон</strong></td><td>{order.client_phone}</td></tr>
-          <tr><td><strong>Устройство</strong></td><td>{order.brand} {order.model}</td></tr>
-          <tr><td><strong>IMEI</strong></td><td><code>{order.imei}</code></td></tr>
-          <tr><td><strong>Статус</strong></td><td>{statusLabels[order.status_slug]}</td></tr>
-          {order.master_name && <tr><td><strong>Мастер</strong></td><td>{order.master_name}</td></tr>}
+          <tbody>
+            <tr><td style={{ width: 200 }}><strong>Клиент</strong></td><td>{order.client_name}</td></tr>
+            <tr><td><strong>Телефон</strong></td><td>{order.client_phone}</td></tr>
+            <tr><td><strong>Устройство</strong></td><td>{order.brand} {order.model}</td></tr>
+            <tr><td><strong>IMEI</strong></td><td><code>{order.imei}</code></td></tr>
+            <tr><td><strong>Статус</strong></td><td>{statusLabels[order.status_slug]}</td></tr>
+            {order.master_name && <tr><td><strong>Мастер</strong></td><td>{order.master_name}</td></tr>}
+          </tbody>
         </table>
 
         <div style={{ marginTop: 16 }}>
@@ -100,11 +102,13 @@ export function PrintOrderPage() {
 
         <div style={{ marginTop: 16, textAlign: 'right' }}>
           <table style={{ width: 'auto', marginLeft: 'auto' }}>
-            <tr><td><strong>Стоимость</strong></td><td>{Number(order.cost).toLocaleString()} ₸</td></tr>
-            {Number(order.discount) > 0 && <tr><td><strong>Скидка</strong></td><td>−{Number(order.discount).toLocaleString()} ₸</td></tr>}
-            <tr><td><strong>Итого</strong></td><td><strong>{finalCost.toLocaleString()} ₸</strong></td></tr>
-            <tr><td><strong>Предоплата</strong></td><td>{Number(order.prepaid).toLocaleString()} ₸</td></tr>
-            <tr><td><strong>К оплате</strong></td><td><strong>{(finalCost - Number(order.prepaid)).toLocaleString()} ₸</strong></td></tr>
+            <tbody>
+              <tr><td><strong>Стоимость</strong></td><td>{Number(order.cost).toLocaleString()} ₸</td></tr>
+              {Number(order.discount) > 0 && <tr><td><strong>Скидка</strong></td><td>−{Number(order.discount).toLocaleString()} ₸</td></tr>}
+              <tr><td><strong>Итого</strong></td><td><strong>{finalCost.toLocaleString()} ₸</strong></td></tr>
+              <tr><td><strong>Предоплата</strong></td><td>{Number(order.prepaid).toLocaleString()} ₸</td></tr>
+              <tr><td><strong>К оплате</strong></td><td><strong>{(finalCost - Number(order.prepaid)).toLocaleString()} ₸</strong></td></tr>
+            </tbody>
           </table>
         </div>
 

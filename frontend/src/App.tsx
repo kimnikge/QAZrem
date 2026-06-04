@@ -12,7 +12,8 @@ import { PrintOrderPage } from './pages/PrintOrderPage';
 import { FinancePage } from './pages/FinancePage';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, initialized } = useAuth();
+  if (!initialized) return null;
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   return <>{children}</>;
 }

@@ -66,6 +66,7 @@ export type Order = {
   status_name: string; status_slug: string;
   brand: string; model: string; imei: string;
   client_id: number; client_name: string; client_phone: string;
+  master_name: string | null;
 };
 
 export type OrderListResponse = { orders: Order[]; total: number; limit: number; offset: number };

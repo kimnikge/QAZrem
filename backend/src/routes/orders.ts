@@ -85,11 +85,13 @@ ordersRouter.get('/', async (req, res, next) => {
         o.created_at, o.completed_at,
         os.name AS status_name, os.slug AS status_slug,
         d.brand, d.model, d.imei,
-        c.id AS client_id, c.name AS client_name, c.phone AS client_phone, c.address AS client_address
+        c.id AS client_id, c.name AS client_name, c.phone AS client_phone, c.address AS client_address,
+        u.name AS master_name
       FROM orders o
       JOIN order_statuses os ON os.id = o.status_id
       JOIN devices d ON d.id = o.device_id
       JOIN clients c ON c.id = d.client_id
+      LEFT JOIN users u ON u.id = o.master_id
       WHERE 1=1
     `;
     const params: unknown[] = [];

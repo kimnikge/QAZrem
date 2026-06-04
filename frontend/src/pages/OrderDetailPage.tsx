@@ -64,8 +64,8 @@ export function OrderDetailPage() {
           <div className="detail-row"><span>IMEI</span><code>{order.imei}</code></div>
           <div className="detail-row"><span>Статус</span><strong>{statusLabels[order.status_slug]}</strong></div>
           {order.diagnosis && <div className="detail-row"><span>Диагноз</span>{order.diagnosis}</div>}
-          <div className="detail-row"><span>Стоимость</span><strong>{Number(order.cost).toLocaleString()} ₽</strong></div>
-          <div className="detail-row"><span>Предоплата</span><strong>{Number(order.prepaid).toLocaleString()} ₽</strong></div>
+          <div className="detail-row"><span>Стоимость</span><strong>{Number(order.cost).toLocaleString()} ₸</strong></div>
+          <div className="detail-row"><span>Предоплата</span><strong>{Number(order.prepaid).toLocaleString()} ₸</strong></div>
         </div>
 
         {availableStatuses.length > 0 && (
@@ -92,7 +92,7 @@ export function OrderDetailPage() {
             {order.parts.map(p => (
               <div key={p.id} className="detail-row">
                 <span>{p.part_name} ×{p.quantity_used}</span>
-                <strong>{Number(p.selling_price_at_moment).toLocaleString()} ₽</strong>
+                <strong>{Number(p.selling_price_at_moment).toLocaleString()} ₸</strong>
               </div>
             ))}
           </div>
@@ -104,7 +104,7 @@ export function OrderDetailPage() {
             {order.payments.map(p => (
               <div key={p.id} className="detail-row">
                 <span>{p.payment_method_name} {p.is_prepayment ? '(предоплата)' : '(доплата)'}</span>
-                <strong>{Number(p.amount).toLocaleString()} ₽</strong>
+                <strong>{Number(p.amount).toLocaleString()} ₸</strong>
               </div>
             ))}
           </div>

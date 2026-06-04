@@ -27,16 +27,16 @@ export function FinancePage() {
       <div className="finance-grid">
         <div className="finance-card">
           <span className="finance-label">Доходы</span>
-          <span className="finance-value positive">{report.income.toLocaleString()} ₽</span>
+          <span className="finance-value positive">{report.income.toLocaleString()} ₸</span>
         </div>
         <div className="finance-card">
           <span className="finance-label">Расходы</span>
-          <span className="finance-value negative">{report.expenses.total.toLocaleString()} ₽</span>
+          <span className="finance-value negative">{report.expenses.total.toLocaleString()} ₸</span>
         </div>
         <div className="finance-card">
           <span className="finance-label">Прибыль</span>
           <span className={`finance-value ${report.profit >= 0 ? 'positive' : 'negative'}`}>
-            {report.profit.toLocaleString()} ₽
+            {report.profit.toLocaleString()} ₸
           </span>
         </div>
         <div className="finance-card">
@@ -46,8 +46,8 @@ export function FinancePage() {
       </div>
       <div className="detail-card">
         <h3>Детали</h3>
-        <div className="detail-row"><span>Прямые расходы</span><strong>{report.expenses.direct.toLocaleString()} ₽</strong></div>
-        <div className="detail-row"><span>Себестоимость запчастей</span><strong>{report.expenses.parts_cost.toLocaleString()} ₽</strong></div>
+        <div className="detail-row"><span>Прямые расходы</span><strong>{report.expenses.direct.toLocaleString()} ₸</strong></div>
+        <div className="detail-row"><span>Себестоимость запчастей</span><strong>{report.expenses.parts_cost.toLocaleString()} ₸</strong></div>
       </div>
     </div>
   );

@@ -89,7 +89,7 @@ export function DashboardPage() {
                 <span className={`status-badge ${statusColors[order.status_slug]}`}>
                   {statusLabels[order.status_slug]}
                 </span>
-                <span className="order-cost">{Number(order.cost).toLocaleString()} ₽</span>
+                <span className="order-cost">{Number(order.cost).toLocaleString()} ₸</span>
               </div>
               <div className="order-card-main">
                 <strong>{order.brand} {order.model}</strong>

@@ -74,10 +74,15 @@ financeRouter.get('/report', requireRole('admin'), async (req, res, next) => {
 });
 
 // Вспомогательная функция для расчёта периода
+function toDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function getPeriodRange(period: string): { from: string; to: string } {
   const now = new Date();
   let from: Date;
-  const to = now.toISOString().split('T')[0];
+  const to = new Date(now);
+  to.setDate(now.getDate() + 1);
 
   switch (period) {
     case 'week':
@@ -96,7 +101,7 @@ function getPeriodRange(period: string): { from: string; to: string } {
       break;
   }
 
-  return { from: from.toISOString().split('T')[0], to };
+  return { from: toDateStr(from), to: toDateStr(to) };
 }
 
 // GET /finance/master-payouts — расчёт комиссии мастерам

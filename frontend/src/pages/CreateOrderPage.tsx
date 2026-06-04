@@ -1,18 +1,50 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { createOrder, search, type CreateOrderInput } from '../api';
+import { createOrder, search, getMasters, type CreateOrderInput } from '../api';
+
+const priorities = [
+  { value: 'normal', label: 'Обычный' },
+  { value: 'urgent', label: 'Срочный' },
+  { value: 'critical', label: 'Критичный' },
+];
+
+const sources = [
+  { value: '', label: '—' },
+  { value: 'сайт', label: 'Сайт' },
+  { value: 'звонок', label: 'Звонок' },
+  { value: 'instagram', label: 'Instagram' },
+  { value: '2gis', label: '2GIS' },
+  { value: 'реклама', label: 'Реклама' },
+  { value: 'постоянный', label: 'Постоянный клиент' },
+  { value: 'другое', label: 'Другое' },
+];
 
 export function CreateOrderPage() {
   const navigate = useNavigate();
+  const [masters, setMasters] = useState<Array<{ id: number; name: string }>>([]);
+
   const [step, setStep] = useState<'search' | 'form' | 'loading'>('search');
   const [query, setQuery] = useState('');
   const [searchResult, setSearchResult] = useState<string>('');
+  const [searchClientId, setSearchClientId] = useState<number | null>(null);
+
   const [form, setForm] = useState<CreateOrderInput>({
-    client: { name: '', phone: '' },
-    device: { brand: '', model: '', imei: '' },
-    issue_description: ''
+    client: { name: '', phone: '', email: '', address: '' },
+    device: { brand: '', model: '', imei: '', serial_number: '', color: '' },
+    issue_description: '',
   });
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    getMasters().then(setMasters).catch(() => {});
+  }, []);
+
+  function setClient(field: 'name' | 'phone' | 'email' | 'address', value: string) {
+    setForm(prev => ({ ...prev, client: { ...prev.client, [field]: value } }));
+  }
+  function setDevice(field: 'brand' | 'model' | 'imei' | 'serial_number' | 'color', value: string) {
+    setForm(prev => ({ ...prev, device: { ...prev.device, [field]: value } }));
+  }
 
   async function handleSearch(e: FormEvent) {
     e.preventDefault();
@@ -22,15 +54,21 @@ export function CreateOrderPage() {
     try {
       const res = await search(query.trim());
       if (res.matchType === 'no_results') {
-        setSearchResult('Клиент не найден. Заполните форму для создания.');
-        setForm(prev => ({ ...prev, client: { name: query, phone: '' }, device: { brand: '', model: '', imei: '' } }));
+        setSearchResult('Клиент не найден. Заполните форму.');
+        setSearchClientId(null);
+        setForm(prev => ({
+          ...prev,
+          client: { name: query, phone: '', email: '', address: '' },
+          device: { brand: '', model: '', imei: '', serial_number: '', color: '' },
+        }));
       } else {
         const c = res.clients[0];
         setSearchResult(`Найден: ${c.client.name} (${c.client.phone})`);
+        setSearchClientId(c.client.id);
         setForm(prev => ({
           ...prev,
-          client: { name: c.client.name, phone: c.client.phone },
-          device: { brand: '', model: '', imei: '' }
+          client: { name: c.client.name, phone: c.client.phone, email: c.client.email || '', address: (c.client as any).address || '' },
+          device: { brand: '', model: '', imei: '', serial_number: '', color: '' },
         }));
       }
       setStep('form');
@@ -44,12 +82,33 @@ export function CreateOrderPage() {
     e.preventDefault();
     setError('');
     try {
-      const res = await createOrder(form);
+      const payload: CreateOrderInput = {
+        ...form,
+        master_id: form.master_id ? Number(form.master_id) : undefined,
+        estimated_cost: form.estimated_cost ? Number(form.estimated_cost) : undefined,
+        discount: form.discount ? Number(form.discount) : undefined,
+        deadline: form.deadline || undefined,
+        priority: (form.priority as 'normal' | 'urgent' | 'critical') || undefined,
+        source: form.source || undefined,
+        client: {
+          ...form.client,
+          email: form.client.email || undefined,
+          address: form.client.address || undefined,
+        },
+        device: {
+          ...form.device,
+          serial_number: form.device.serial_number || undefined,
+          color: form.device.color || undefined,
+        },
+      };
+      const res = await createOrder(payload);
       navigate(`/orders/${res.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка создания');
     }
   }
+
+  const today = new Date().toISOString().split('T')[0];
 
   return (
     <div>
@@ -79,22 +138,86 @@ export function CreateOrderPage() {
       {step === 'form' && (
         <>
           {searchResult && <div className="search-result">{searchResult}</div>}
+          {searchClientId && (
+            <div style={{ fontSize: 13, color: '#5f6368', marginBottom: 12 }}>
+              ID клиента: <code>{searchClientId}</code>
+            </div>
+          )}
+
           <form onSubmit={handleSubmit} className="order-form">
+            {/* Клиент */}
             <fieldset>
               <legend>Клиент</legend>
-              <input placeholder="Имя" value={form.client.name} onChange={e => setForm(f => ({ ...f, client: { ...f.client, name: e.target.value } }))} required />
-              <input placeholder="Телефон" value={form.client.phone} onChange={e => setForm(f => ({ ...f, client: { ...f.client, phone: e.target.value } }))} required />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <input placeholder="Имя *" value={form.client.name} onChange={e => setClient('name', e.target.value)} required />
+                <input placeholder="Телефон *" value={form.client.phone} onChange={e => setClient('phone', e.target.value)} required />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <input placeholder="Email" type="email" value={form.client.email || ''} onChange={e => setClient('email', e.target.value)} />
+                <input placeholder="Адрес" value={form.client.address || ''} onChange={e => setClient('address', e.target.value)} />
+              </div>
             </fieldset>
+
+            {/* Устройство */}
             <fieldset>
               <legend>Устройство</legend>
-              <input placeholder="Бренд (Apple, Samsung...)" value={form.device.brand} onChange={e => setForm(f => ({ ...f, device: { ...f.device, brand: e.target.value } }))} required />
-              <input placeholder="Модель" value={form.device.model} onChange={e => setForm(f => ({ ...f, device: { ...f.device, model: e.target.value } }))} required />
-              <input placeholder="IMEI" value={form.device.imei} onChange={e => setForm(f => ({ ...f, device: { ...f.device, imei: e.target.value } }))} required />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                <input placeholder="Бренд *" value={form.device.brand} onChange={e => setDevice('brand', e.target.value)} required />
+                <input placeholder="Модель *" value={form.device.model} onChange={e => setDevice('model', e.target.value)} required />
+                <input placeholder="IMEI *" value={form.device.imei} onChange={e => setDevice('imei', e.target.value)} required />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <input placeholder="Серийный номер" value={form.device.serial_number || ''} onChange={e => setDevice('serial_number', e.target.value)} />
+                <input placeholder="Цвет" value={form.device.color || ''} onChange={e => setDevice('color', e.target.value)} />
+              </div>
             </fieldset>
+
+            {/* Заказ */}
             <fieldset>
-              <legend>Проблема</legend>
-              <textarea placeholder="Опишите проблему..." value={form.issue_description} onChange={e => setForm(f => ({ ...f, issue_description: e.target.value }))} required rows={3} />
+              <legend>Заказ</legend>
+              <textarea
+                placeholder="Описание проблемы *"
+                value={form.issue_description}
+                onChange={e => setForm(prev => ({ ...prev, issue_description: e.target.value }))}
+                required rows={3}
+              />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                <div>
+                  <label style={{ fontSize: 12, color: '#5f6368', display: 'block', marginBottom: 4 }}>Мастер</label>
+                  <select value={form.master_id || ''} onChange={e => setForm(prev => ({ ...prev, master_id: e.target.value ? Number(e.target.value) : undefined }))} style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14 }}>
+                    <option value="">— Не назначен —</option>
+                    {masters.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, color: '#5f6368', display: 'block', marginBottom: 4 }}>Приоритет</label>
+                  <select value={form.priority || ''} onChange={e => setForm(prev => ({ ...prev, priority: e.target.value as CreateOrderInput['priority'] }))} style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14 }}>
+                    {priorities.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, color: '#5f6368', display: 'block', marginBottom: 4 }}>Откуда пришёл</label>
+                  <select value={form.source || ''} onChange={e => setForm(prev => ({ ...prev, source: e.target.value }))} style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14 }}>
+                    {sources.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 8 }}>
+                <div>
+                  <label style={{ fontSize: 12, color: '#5f6368', display: 'block', marginBottom: 4 }}>Предвар. стоимость</label>
+                  <input type="number" placeholder="0" value={form.estimated_cost ?? ''} onChange={e => setForm(prev => ({ ...prev, estimated_cost: e.target.value ? Number(e.target.value) : undefined }))} style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14 }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, color: '#5f6368', display: 'block', marginBottom: 4 }}>Скидка</label>
+                  <input type="number" placeholder="0" value={form.discount ?? ''} onChange={e => setForm(prev => ({ ...prev, discount: e.target.value ? Number(e.target.value) : undefined }))} style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14 }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, color: '#5f6368', display: 'block', marginBottom: 4 }}>Срок (дедлайн)</label>
+                  <input type="date" value={form.deadline || ''} onChange={e => setForm(prev => ({ ...prev, deadline: e.target.value }))} min={today} style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14 }} />
+                </div>
+              </div>
             </fieldset>
+
             <div className="form-actions">
               <button type="button" className="btn-secondary" onClick={() => navigate('/')}>Отмена</button>
               <button type="submit" className="btn-primary">Создать заказ</button>

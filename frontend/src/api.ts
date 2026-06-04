@@ -92,10 +92,14 @@ export function getOrder(id: number) {
 }
 
 export type CreateOrderInput = {
-  client: { name: string; phone: string };
-  device: { brand: string; model: string; imei: string };
+  client: { name: string; phone: string; email?: string; address?: string };
+  device: { brand: string; model: string; imei: string; serial_number?: string; color?: string };
   issue_description: string;
   master_id?: number;
+  deadline?: string;
+  priority?: 'normal' | 'urgent' | 'critical';
+  source?: string;
+  estimated_cost?: number;
   discount?: number;
 };
 

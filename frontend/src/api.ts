@@ -123,6 +123,25 @@ export function getParts(lowStock?: boolean) {
   return request<Part[]>(`/parts${lowStock ? '?low_stock=true' : ''}`);
 }
 
+export type CreatePartInput = {
+  name: string; sku: string; purchase_price: number; selling_price: number;
+  quantity?: number; min_quantity?: number; compatible_models?: string[];
+};
+
+export function createPart(data: CreatePartInput) {
+  return request<Part>('/parts', { method: 'POST', body: JSON.stringify(data) });
+}
+
+export function updatePart(id: number, data: Partial<CreatePartInput>) {
+  return request<Part>(`/parts/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+}
+
+export function receivePart(part_id: number, quantity: number, document?: string) {
+  return request<{ message: string }>('/parts/movement', {
+    method: 'POST', body: JSON.stringify({ part_id, quantity, document })
+  });
+}
+
 // --- Finance ---
 export type FinanceReport = {
   period: { from: string; to: string };

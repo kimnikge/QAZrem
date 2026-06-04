@@ -1,0 +1,37 @@
+{
+  "name": "@qazrem/backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "migrate:up": "node-pg-migrate up --env-path DATABASE_URL",
+    "migrate:down": "node-pg-migrate down --env-path DATABASE_URL",
+    "migrate:create": "node-pg-migrate create"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.107.0",
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.18.3",
+    "jsonwebtoken": "^9.0.3",
+    "pg": "^8.11.3",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^20.11.30",
+    "@types/pg": "^8.10.9",
+    "node-pg-migrate": "^8.0.4",
+    "tsx": "^4.7.1",
+    "typescript": "^5.4.2"
+  }
+}

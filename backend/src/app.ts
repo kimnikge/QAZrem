@@ -16,6 +16,7 @@ import { ordersRouter } from './routes/orders.js';
 import { partsRouter } from './routes/parts.js';
 import { paymentsRouter } from './routes/payments.js';
 import { searchRouter } from './routes/search.js';
+import { settingsRouter } from './routes/settings.js';
 import { usersRouter } from './routes/users.js';
 
 export const app = express();
@@ -53,6 +54,7 @@ app.use('/parts', partsRouter);
 app.use('/payments', paymentsRouter);
 app.use('/expenses', expensesRouter);
 app.use('/finance', financeRouter);
+app.use('/settings', settingsRouter);
 app.use('/users', usersRouter);
 
 // Централизованная обработка ошибок

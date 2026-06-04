@@ -34,8 +34,8 @@ export function OrderDetailPage() {
       ]);
       setOrder(o);
       setAvailableStatuses(s.available);
-      setEditCost(o.cost);
-      setEditDiscount(o.discount);
+      setEditCost(String(Math.round(Number(o.cost))));
+      setEditDiscount(String(Math.round(Number(o.discount))));
       setEditDiagnosis(o.diagnosis || '');
       setEditComment(o.internal_comment || '');
     } catch (err) {
@@ -51,8 +51,8 @@ export function OrderDetailPage() {
     setSaving(true);
     try {
       const body: Record<string, unknown> = {};
-      if (editCost !== order?.cost) body.cost = Math.round(Number(editCost));
-      if (editDiscount !== order?.discount) body.discount = Math.round(Number(editDiscount));
+      if (Math.round(Number(editCost)) !== Math.round(Number(order?.cost))) body.cost = Math.round(Number(editCost));
+      if (Math.round(Number(editDiscount)) !== Math.round(Number(order?.discount))) body.discount = Math.round(Number(editDiscount));
       if (editDiagnosis !== (order?.diagnosis || '')) body.diagnosis = editDiagnosis;
       if (editComment !== (order?.internal_comment || '')) body.internal_comment = editComment;
 

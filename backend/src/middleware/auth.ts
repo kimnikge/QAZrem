@@ -19,6 +19,11 @@ declare global {
 }
 
 function extractToken(req: Request): string {
+  // 1. httpOnly cookie (защищён от XSS)
+  if (req.cookies?.token) {
+    return req.cookies.token;
+  }
+  // 2. Fallback: Authorization Bearer header
   const header = req.headers.authorization;
   if (!header || !header.startsWith('Bearer ')) {
     throw new UnauthorizedError();

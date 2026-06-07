@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { pool } from '../db/pool.js';
 import { BadRequestError, NotFoundError } from '../lib/errors.js';
+import { idParamSchema } from '../lib/validation.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { sendTelegramMessage } from '../services/telegram.js';
 
@@ -144,7 +145,7 @@ ordersRouter.get('/', async (req, res, next) => {
 // ============================================================
 ordersRouter.get('/:id', async (req, res, next) => {
   try {
-    const { id } = req.params;
+    const id = idParamSchema.parse(req.params.id);
 
     const orderResult = await pool.query(
       `SELECT
@@ -256,7 +257,7 @@ const updateOrderSchema = z.object({
 
 ordersRouter.patch('/:id', requireRole('admin', 'master'), async (req, res, next) => {
   try {
-    const { id } = req.params;
+    const id = idParamSchema.parse(req.params.id);
     const input = updateOrderSchema.parse(req.body);
 
     // Валидация: скидка не может превышать стоимость

@@ -14,7 +14,8 @@
     "typecheck": "npm run typecheck -w backend && npm run typecheck -w frontend",
     "migrate:up": "dotenv -e .env -- npx node-pg-migrate up -m backend/migrations",
     "migrate:down": "dotenv -e .env -- npx node-pg-migrate down -m backend/migrations",
-    "migrate:create": "cd backend && npx node-pg-migrate create"
+    "migrate:create": "cd backend && npx node-pg-migrate create",
+    "setup:hooks": "ln -sf ../../.githooks/pre-commit .git/hooks/pre-commit && chmod +x .githooks/pre-commit && echo '✅ Pre-commit hook установлен'"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",

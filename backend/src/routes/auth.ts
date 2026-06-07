@@ -51,6 +51,11 @@ authRouter.post('/register', requireAuth, requireRole('admin'), async (req, res,
   }
 });
 
+authRouter.post('/logout', requireAuth, (_req, res) => {
+  res.clearCookie('token');
+  res.json({ message: 'Вы вышли из системы' });
+});
+
 authRouter.post('/login', async (req, res, next) => {
   try {
     const input = loginSchema.parse(req.body);
@@ -76,6 +81,14 @@ authRouter.post('/login', async (req, res, next) => {
       JWT_SECRET,
       { expiresIn: TOKEN_EXPIRY }
     );
+
+    // httpOnly cookie — защита от XSS (дублирует Bearer-токен)
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 24 * 60 * 60 * 1000 // 24 часа
+    });
 
     res.json({
       user: {

@@ -1,5 +1,6 @@
 import cors from 'cors';
 import express from 'express';
+import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import rateLimit from 'express-rate-limit';
@@ -23,14 +24,25 @@ import { requireAuth } from './middleware/auth.js';
 export const app = express();
 
 // Безопасность
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:"],
+      connectSrc: ["'self'", env.API_CORS_ORIGIN],
+    }
+  }
+}));
+app.use(cookieParser());
 app.use(cors({ origin: env.API_CORS_ORIGIN }));
 
 // Логгирование запросов
 app.use(morgan('short'));
 
-// Ограничение body (10 MB максимум)
-app.use(express.json({ limit: '10mb' }));
+// Ограничение body (1 MB максимум)
+app.use(express.json({ limit: '1mb' }));
 
 // Rate limiting на login (макс 10 попыток в минуту)
 const authLimiter = rateLimit({
@@ -41,10 +53,22 @@ const authLimiter = rateLimit({
   legacyHeaders: false
 });
 
+// Rate limiting на мутирующие эндпоинты (макс 30 запросов в минуту)
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  message: { error: 'Слишком много запросов. Повторите через минуту' },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
 // Публичные роуты
 app.use('/health', healthRouter);
 app.use('/auth/login', authLimiter);
 app.use('/auth', authRouter);
+
+// Rate limit применяем ко всем защищённым API-роутам
+app.use(apiLimiter);
 
 // Защищённые роуты (требуется JWT)
 app.use('/search', requireAuth, searchRouter);

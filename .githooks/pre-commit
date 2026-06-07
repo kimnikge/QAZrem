@@ -1,0 +1,48 @@
+#!/bin/bash
+# Pre-commit hook — проверка секретов в коммите
+# Установка: ln -sf ../../.githooks/pre-commit .git/hooks/pre-commit
+
+echo "🔍 Проверяю коммит на секреты..."
+
+# Проверка .env файлов (кроме .env.example)
+if git diff --cached --name-only | grep -qE '\.env$' && ! git diff --cached --name-only | grep -q '\.env\.example'; then
+  echo "❌ Запрещено коммитить .env файлы (кроме .env.example)!"
+  exit 1
+fi
+
+FOUND=0
+
+# 1. Приватные ключи (PEM)
+if git grep -qE "BEGIN.*PRIVATE KEY" --cached -- ':(exclude)*.md' ':(exclude)*.lock' ':(exclude).githooks/*'; then
+  echo "❌ Найден приватный ключ в коммите!"
+  FOUND=1
+fi
+
+# 2. Секретные ключи со значениями (только если есть реальное значение после =)
+if git grep -qE "(JWT_SECRET|SUPABASE_SERVICE_KEY|TELEGRAM_BOT_TOKEN|DATABASE_URL)=[^ ]{8,}" --cached -- ':(exclude)*.md' ':(exclude)*.lock' ':(exclude).githooks/*'; then
+  echo "❌ Найдены учётные данные в коде!"
+  git grep -nE "(JWT_SECRET|SUPABASE_SERVICE_KEY|TELEGRAM_BOT_TOKEN|DATABASE_URL)=[^ ]{8,}" --cached -- ':(exclude)*.md' ':(exclude)*.lock'
+  FOUND=1
+fi
+
+# 3. Пароли/токены в кавычках (значение > 16 символов — похоже на реальный секрет)
+if git grep -qE "(password|passwd|secret|api[_-]?key)\s*[:=]\s*['\"][^'\"]{16,}['\"]" --cached -- ':(exclude)*.md' ':(exclude)*.lock' ':(exclude).githooks/*' ':(exclude)package-lock.json'; then
+  echo "❌ Найдены жёстко закодированные пароли/ключи!"
+  git grep -nE "(password|passwd|secret|api[_-]?key)\s*[:=]\s*['\"][^'\"]{16,}['\"]" --cached -- ':(exclude)*.md' ':(exclude)*.lock' ':(exclude)package-lock.json'
+  FOUND=1
+fi
+
+# 4. Stripe / GitHub / Google API ключи
+if git grep -qE "(sk_live_|ghp_|AIza[0-9A-Za-z_-]{35})" --cached -- ':(exclude)*.md' ':(exclude)*.lock'; then
+  echo "❌ Найдены API-ключи в коммите!"
+  FOUND=1
+fi
+
+if [ $FOUND -eq 1 ]; then
+  echo ""
+  echo "⛔️ Коммит отменён. Уберите секреты из кода."
+  exit 1
+fi
+
+echo "✅ Проверка пройдена."
+exit 0

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { pool } from '../db/pool.js';
+import { BadRequestError } from '../lib/errors.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 
 export const settingsRouter = Router();
@@ -48,7 +49,16 @@ settingsRouter.post('/payment-methods', async (req, res, next) => {
 // DELETE /settings/payment-methods/:id
 settingsRouter.delete('/payment-methods/:id', async (req, res, next) => {
   try {
-    await pool.query('DELETE FROM payment_methods WHERE id = $1', [req.params.id]);
+    const { id } = req.params;
+    // Проверяем, есть ли платежи с этим способом
+    const usage = await pool.query(
+      'SELECT COUNT(*)::int AS cnt FROM payments WHERE payment_method_id = $1',
+      [id]
+    );
+    if (usage.rows[0].cnt > 0) {
+      throw new BadRequestError('Нельзя удалить способ оплаты, по которому есть платежи');
+    }
+    await pool.query('DELETE FROM payment_methods WHERE id = $1', [id]);
     res.json({ message: 'Удалено' });
   } catch (error) {
     next(error);
@@ -72,7 +82,16 @@ settingsRouter.post('/expense-categories', async (req, res, next) => {
 // DELETE /settings/expense-categories/:id
 settingsRouter.delete('/expense-categories/:id', async (req, res, next) => {
   try {
-    await pool.query('DELETE FROM expense_categories WHERE id = $1', [req.params.id]);
+    const { id } = req.params;
+    // Проверяем, есть ли расходы с этой категорией
+    const usage = await pool.query(
+      'SELECT COUNT(*)::int AS cnt FROM expenses WHERE category_id = $1',
+      [id]
+    );
+    if (usage.rows[0].cnt > 0) {
+      throw new BadRequestError('Нельзя удалить категорию расходов, по которой есть расходы');
+    }
+    await pool.query('DELETE FROM expense_categories WHERE id = $1', [id]);
     res.json({ message: 'Удалено' });
   } catch (error) {
     next(error);

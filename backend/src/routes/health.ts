@@ -6,11 +6,7 @@ export const healthRouter = Router();
 healthRouter.get('/', async (_req, res, next) => {
   try {
     await pool.query('SELECT 1');
-    res.json({
-      status: 'ok',
-      database: 'ok',
-      timestamp: new Date().toISOString()
-    });
+    res.json({ status: 'ok' });
   } catch (error) {
     next(error);
   }

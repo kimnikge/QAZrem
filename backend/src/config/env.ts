@@ -17,7 +17,7 @@ const schema = z.object({
   API_PORT: z.coerce.number().int().positive().default(4000),
   API_CORS_ORIGIN: z.string().default('http://localhost:5173'),
   DATABASE_URL: z.string().url(),
-  JWT_SECRET: z.string().min(10, 'JWT_SECRET должен быть минимум 10 символов'),
+  JWT_SECRET: z.string().min(32, 'JWT_SECRET должен быть минимум 32 символа'),
   SUPABASE_URL: z.string().url().optional(),
   SUPABASE_ANON_KEY: z.string().optional(),
   SUPABASE_SERVICE_KEY: z.string().optional(),

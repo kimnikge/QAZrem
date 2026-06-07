@@ -77,6 +77,7 @@ export type Order = {
   cost: string; estimated_cost: string; discount: string; prepaid: string;
   deadline: string | null; status_deadline: string | null;
   priority: string; source: string | null; internal_comment: string | null;
+  master_commission_pct: string;
   created_at: string; completed_at: string | null;
   status_name: string; status_slug: string;
   brand: string; model: string; imei: string;
@@ -243,11 +244,11 @@ export function getMasterPayouts(period: string, master_id?: number) {
 
 // --- Users ---
 export function getMasters() {
-  return request<{ id: number; name: string }[]>('/users/masters');
+  return request<{ id: number; name: string; default_commission_pct: string }[]>('/users/masters');
 }
 
 export function getAllUsers() {
-  return request<Array<{ id: number; name: string; login: string; role: string }>>('/users');
+  return request<Array<{ id: number; name: string; login: string; role: string; default_commission_pct: string }>>('/users');
 }
 
 // --- Settings ---
@@ -255,7 +256,7 @@ export type SettingsData = {
   order_statuses: Array<{ id: number; name: string; slug: string; order: number; is_final: boolean }>;
   payment_methods: Array<{ id: number; name: string }>;
   expense_categories: Array<{ id: number; name: string }>;
-  users: Array<{ id: number; name: string; login: string; role: string; created_at: string }>;
+  users: Array<{ id: number; name: string; login: string; role: string; default_commission_pct: string; created_at: string }>;
 };
 
 export function getSettings() {
@@ -280,4 +281,39 @@ export function createExpenseCategory(name: string) {
 
 export function deleteExpenseCategory(id: number) {
   return request(`/settings/expense-categories/${id}`, { method: 'DELETE' });
+}
+
+// --- User management (admin) ---
+export type UserCreateInput = {
+  name: string;
+  login: string;
+  password: string;
+  role: 'admin' | 'master' | 'reception';
+  default_commission_pct?: number;
+};
+
+export type UserUpdateInput = {
+  name?: string;
+  login?: string;
+  password?: string;
+  role?: 'admin' | 'master' | 'reception';
+  default_commission_pct?: number;
+};
+
+export function createUser(data: UserCreateInput) {
+  return request<{ id: number; name: string; login: string; role: string; default_commission_pct: string; created_at: string }>('/users', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  });
+}
+
+export function updateUser(id: number, data: UserUpdateInput) {
+  return request<{ id: number; name: string; login: string; role: string; default_commission_pct: string; created_at: string }>(`/users/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data)
+  });
+}
+
+export function deleteUser(id: number) {
+  return request<{ message: string }>(`/users/${id}`, { method: 'DELETE' });
 }

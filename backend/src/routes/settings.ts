@@ -15,7 +15,7 @@ settingsRouter.get('/', async (_req, res, next) => {
       pool.query('SELECT id, name, slug, "order", is_final FROM order_statuses ORDER BY "order"'),
       pool.query('SELECT id, name FROM payment_methods ORDER BY id'),
       pool.query('SELECT id, name FROM expense_categories ORDER BY id'),
-      pool.query('SELECT id, name, login, role, created_at FROM users ORDER BY name')
+      pool.query('SELECT id, name, login, role, default_commission_pct, created_at FROM users ORDER BY name')
     ]);
 
     res.json({

@@ -30,6 +30,7 @@ const createOrderWithNewDeviceSchema = z.object({
   }),
   issue_description: z.string().min(5, 'Опишите проблему минимум 5 символов'),
   master_id: z.number().int().positive().optional(),
+  master_commission_pct: z.number().min(0).max(100).optional(),
   deadline: z.string().optional(),
   priority: z.enum(['normal', 'urgent', 'critical']).optional(),
   source: z.string().optional(),
@@ -41,6 +42,7 @@ const createOrderWithExistingDeviceSchema = z.object({
   device_id: z.number().int().positive(),
   issue_description: z.string().min(5),
   master_id: z.number().int().positive().optional(),
+  master_commission_pct: z.number().min(0).max(100).optional(),
   deadline: z.string().optional(),
   priority: z.enum(['normal', 'urgent', 'critical']).optional(),
   source: z.string().optional(),
@@ -84,6 +86,7 @@ ordersRouter.get('/', async (req, res, next) => {
         o.issue_description, o.diagnosis,
         o.cost, o.estimated_cost, o.prepaid, o.discount, o.internal_comment,
         o.deadline, o.status_deadline, o.priority, o.source,
+        o.master_commission_pct,
         o.created_at, o.completed_at,
         os.name AS status_name, os.slug AS status_slug,
         d.brand, d.model, d.imei,
@@ -145,7 +148,13 @@ ordersRouter.get('/:id', async (req, res, next) => {
 
     const orderResult = await pool.query(
       `SELECT
-        o.*, os.name AS status_name, os.slug AS status_slug, os.is_final,
+        o.id, o.device_id, o.master_id, o.status_id,
+        o.issue_description, o.diagnosis, o.cost, o.estimated_cost,
+        o.prepaid, o.discount, o.internal_comment,
+        o.deadline, o.status_deadline, o.priority, o.source,
+        o.master_commission_pct,
+        o.created_at, o.completed_at,
+        os.name AS status_name, os.slug AS status_slug, os.is_final,
         d.brand, d.model, d.imei, d.serial_number, d.color,
         c.id AS client_id, c.name AS client_name, c.phone AS client_phone, c.email AS client_email, c.address AS client_address,
         u.name AS master_name
@@ -239,6 +248,7 @@ const updateOrderSchema = z.object({
   diagnosis: z.string().optional(),
   internal_comment: z.string().optional(),
   master_id: z.number().int().positive().optional(),
+  master_commission_pct: z.number().min(0).max(100).optional(),
   deadline: z.string().optional(),
   priority: z.enum(['normal', 'urgent', 'critical']).optional(),
   source: z.string().optional()
@@ -248,6 +258,19 @@ ordersRouter.patch('/:id', requireRole('admin', 'master'), async (req, res, next
   try {
     const { id } = req.params;
     const input = updateOrderSchema.parse(req.body);
+
+    // Валидация: скидка не может превышать стоимость
+    if (input.discount !== undefined) {
+      const currentOrder = await pool.query(
+        'SELECT cost FROM orders WHERE id = $1',
+        [id]
+      );
+      if (currentOrder.rows.length === 0) throw new NotFoundError('Заказ');
+      const currentCost = input.cost ?? Number(currentOrder.rows[0].cost);
+      if (input.discount > currentCost) {
+        throw new BadRequestError('Скидка не может превышать стоимость заказа');
+      }
+    }
 
     const fields: string[] = [];
     const values: unknown[] = [];
@@ -292,6 +315,12 @@ ordersRouter.post('/', requireRole('admin', 'reception'), async (req, res, next)
     // Сценарий A: передан существующий device_id
     if (req.body.device_id) {
       const input = createOrderWithExistingDeviceSchema.parse(req.body);
+
+      // Валидация: скидка не может превышать стоимость
+      if (input.discount !== undefined && input.estimated_cost !== undefined && input.discount > input.estimated_cost) {
+        throw new BadRequestError('Скидка не может превышать стоимость заказа');
+      }
+
       const device = await client.query('SELECT id, client_id FROM devices WHERE id = $1', [input.device_id]);
       if (device.rows.length === 0) throw new NotFoundError('Устройство');
       deviceId = device.rows[0].id;
@@ -299,6 +328,11 @@ ordersRouter.post('/', requireRole('admin', 'reception'), async (req, res, next)
     // Сценарий B: новый клиент + новое устройство
     else {
       const input = createOrderWithNewDeviceSchema.parse(req.body);
+
+      // Валидация: скидка не может превышать стоимость
+      if (input.discount !== undefined && input.estimated_cost !== undefined && input.discount > input.estimated_cost) {
+        throw new BadRequestError('Скидка не может превышать стоимость заказа');
+      }
 
       // Ищем клиента по телефону
       let clientResult = await client.query(
@@ -345,10 +379,23 @@ ordersRouter.post('/', requireRole('admin', 'reception'), async (req, res, next)
 
     const masterId = req.body.master_id || null;
 
+    // Определяем процент комиссии мастера
+    let masterCommissionPct = req.body.master_commission_pct;
+    if (masterCommissionPct === undefined && masterId) {
+      const masterUser = await client.query(
+        'SELECT default_commission_pct FROM users WHERE id = $1',
+        [masterId]
+      );
+      masterCommissionPct = masterUser.rows.length > 0
+        ? Number(masterUser.rows[0].default_commission_pct)
+        : 50;
+    }
+    if (masterCommissionPct === undefined) masterCommissionPct = 50;
+
     // Создаём заказ
     const orderResult = await client.query(
-      `INSERT INTO orders (device_id, master_id, status_id, issue_description, deadline, priority, source, estimated_cost, discount)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `INSERT INTO orders (device_id, master_id, status_id, issue_description, deadline, priority, source, estimated_cost, discount, master_commission_pct)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING id`,
       [
         deviceId,
@@ -359,7 +406,8 @@ ordersRouter.post('/', requireRole('admin', 'reception'), async (req, res, next)
         req.body.priority || 'normal',
         req.body.source || null,
         req.body.estimated_cost || 0,
-        req.body.discount || 0
+        req.body.discount || 0,
+        masterCommissionPct
       ]
     );
     const orderId = orderResult.rows[0].id;

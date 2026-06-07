@@ -18,6 +18,7 @@ import { paymentsRouter } from './routes/payments.js';
 import { searchRouter } from './routes/search.js';
 import { settingsRouter } from './routes/settings.js';
 import { usersRouter } from './routes/users.js';
+import { requireAuth } from './middleware/auth.js';
 
 export const app = express();
 
@@ -45,9 +46,9 @@ app.use('/health', healthRouter);
 app.use('/auth/login', authLimiter);
 app.use('/auth', authRouter);
 
-// Защищённые роуты (авторизация внутри каждого роута)
-app.use('/search', searchRouter);
-app.use('/clients', clientsRouter);
+// Защищённые роуты (требуется JWT)
+app.use('/search', requireAuth, searchRouter);
+app.use('/clients', requireAuth, clientsRouter);
 app.use('/devices', devicesRouter);
 app.use('/orders', ordersRouter);
 app.use('/parts', partsRouter);
@@ -69,7 +70,12 @@ app.use((error: unknown, _req: express.Request, res: express.Response, _next: ex
     return;
   }
 
-  const message = error instanceof Error ? error.message : 'Неизвестная ошибка сервера';
   console.error('[Error]', error);
-  res.status(500).json({ error: message });
+
+  if (process.env.NODE_ENV === 'production') {
+    res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+  } else {
+    const message = error instanceof Error ? error.message : 'Неизвестная ошибка сервера';
+    res.status(500).json({ error: message });
+  }
 });

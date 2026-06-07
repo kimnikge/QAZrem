@@ -1,5 +1,5 @@
 import express from 'express';
-import { app } from '../backend/src/app.js';
+import { app } from '../backend/src/app.ts';
 
 // Vercel serverless: оборачиваем Express под /api,
 // т.к. в production все API-запросы идут с префиксом /api.

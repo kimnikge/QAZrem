@@ -13,27 +13,27 @@ fi
 FOUND=0
 
 # 1. Приватные ключи (PEM)
-if git grep -qE "BEGIN.*PRIVATE KEY" --cached -- ':(exclude)*.md' ':(exclude)*.lock' ':(exclude).githooks/*'; then
+if git grep -qE "BEGIN.*PRIVATE KEY" --cached -- ':(exclude)*.md' ':(exclude)*.lock' ':(exclude).githooks/*' 2>/dev/null; then
   echo "❌ Найден приватный ключ в коммите!"
   FOUND=1
 fi
 
-# 2. Секретные ключи со значениями (только если есть реальное значение после =)
-if git grep -qE "(JWT_SECRET|SUPABASE_SERVICE_KEY|TELEGRAM_BOT_TOKEN|DATABASE_URL)=[^ ]{8,}" --cached -- ':(exclude)*.md' ':(exclude)*.lock' ':(exclude).githooks/*'; then
+# 2. Секретные ключи со значениями
+if git grep -qE "(JWT_SECRET|SUPABASE_SERVICE_KEY|TELEGRAM_BOT_TOKEN|DATABASE_URL)=[^ ]{8,}" --cached -- ':(exclude)*.md' ':(exclude)*.lock' ':(exclude).githooks/*' 2>/dev/null; then
   echo "❌ Найдены учётные данные в коде!"
   git grep -nE "(JWT_SECRET|SUPABASE_SERVICE_KEY|TELEGRAM_BOT_TOKEN|DATABASE_URL)=[^ ]{8,}" --cached -- ':(exclude)*.md' ':(exclude)*.lock'
   FOUND=1
 fi
 
-# 3. Пароли/токены в кавычках (значение > 16 символов — похоже на реальный секрет)
-if git grep -qE "(password|passwd|secret|api[_-]?key)\s*[:=]\s*['\"][^'\"]{16,}['\"]" --cached -- ':(exclude)*.md' ':(exclude)*.lock' ':(exclude).githooks/*' ':(exclude)package-lock.json'; then
+# 3. Пароли/токены в кавычках (значение > 16 символов)
+if git grep -qE "(password|passwd|secret|api[_-]?key)\s*[:=]\s*['\"][^'\"]{16,}['\"]" --cached -- ':(exclude)*.md' ':(exclude)*.lock' ':(exclude).githooks/*' ':(exclude)package-lock.json' 2>/dev/null; then
   echo "❌ Найдены жёстко закодированные пароли/ключи!"
   git grep -nE "(password|passwd|secret|api[_-]?key)\s*[:=]\s*['\"][^'\"]{16,}['\"]" --cached -- ':(exclude)*.md' ':(exclude)*.lock' ':(exclude)package-lock.json'
   FOUND=1
 fi
 
 # 4. Stripe / GitHub / Google API ключи
-if git grep -qE "(sk_live_|ghp_|AIza[0-9A-Za-z_-]{35})" --cached -- ':(exclude)*.md' ':(exclude)*.lock'; then
+if git grep -qE "(sk_live_|ghp_|AIza[0-9A-Za-z_-]{35})" --cached -- ':(exclude)*.md' ':(exclude)*.lock' 2>/dev/null; then
   echo "❌ Найдены API-ключи в коммите!"
   FOUND=1
 fi

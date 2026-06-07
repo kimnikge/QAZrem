@@ -1,4 +1,6 @@
-const apiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
+// VITE_API_URL в dev: http://localhost:4000
+// В production (Vercel): не задан → используем /api (same-origin, через rewrite)
+const apiUrl = import.meta.env.VITE_API_URL || '/api';
 
 function getToken(): string | null {
   return sessionStorage.getItem('token');

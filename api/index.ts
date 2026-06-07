@@ -1,5 +1,5 @@
 import express from 'express';
-import { app } from '../backend/src/app.ts';
+import { app } from '../backend/src/app.js';
 
 // Vercel serverless: оборачиваем Express под /api
 const wrapper = express();

@@ -1,10 +1,7 @@
 import express from 'express';
+import { app } from '../backend/src/app.ts';
 
-// Импортируем скомпилированный backend (tsc → backend/dist/)
-import { app } from '../backend/dist/app.js';
-
-// Vercel serverless: оборачиваем Express под /api,
-// т.к. в production все API-запросы идут с префиксом /api.
+// Vercel serverless: оборачиваем Express под /api
 const wrapper = express();
 wrapper.use('/api', app);
 

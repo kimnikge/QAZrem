@@ -117,7 +117,7 @@ usersRouter.patch('/:id', requireRole('admin'), async (req, res, next) => {
     for (const [key, value] of Object.entries(input)) {
       if (value === undefined) continue;
       if (key === 'password') {
-        const hash = await bcrypt.hash(value, 10);
+        const hash = await bcrypt.hash(String(value), 10);
         fields.push(`password_hash = $${idx++}`);
         values.push(hash);
       } else {

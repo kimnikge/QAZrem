@@ -1,5 +1,5 @@
 {
-    "buildCommand": "npm run build -w frontend",
+    "buildCommand": "npm run build -w backend && npm run build -w frontend",
     "outputDirectory": "frontend/dist",
     "installCommand": "npm install",
     "rewrites": [
@@ -14,7 +14,7 @@
     ],
     "functions": {
         "api/index.ts": {
-            "includeFiles": "backend/**"
+            "includeFiles": "backend/dist/**"
         }
     }
 }

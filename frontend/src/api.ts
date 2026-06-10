@@ -81,18 +81,25 @@ export type Order = {
   priority: string; source: string | null; internal_comment: string | null;
   master_commission_pct: string;
   created_at: string; completed_at: string | null;
+  is_overdue: boolean;
   status_name: string; status_slug: string;
   brand: string; model: string; imei: string;
   client_id: number; client_name: string; client_phone: string;
   master_name: string | null;
+  created_by_name: string | null;
+  group_id: number | null;
+  group_name: string | null;
 };
 
 export type OrderListResponse = { orders: Order[]; total: number; limit: number; offset: number };
 
-export function getOrders(params?: { status?: string; search?: string; limit?: number; offset?: number }) {
+export function getOrders(params?: { status?: string; search?: string; overdue?: string; my?: string; group_id?: string; limit?: number; offset?: number }) {
   const query = new URLSearchParams();
   if (params?.status) query.set('status', params.status);
   if (params?.search) query.set('search', params.search);
+  if (params?.overdue) query.set('overdue', params.overdue);
+  if (params?.my) query.set('my', params.my);
+  if (params?.group_id) query.set('group_id', params.group_id);
   if (params?.limit) query.set('limit', String(params.limit));
   if (params?.offset) query.set('offset', String(params.offset));
   const qs = query.toString();
@@ -102,7 +109,8 @@ export function getOrders(params?: { status?: string; search?: string; limit?: n
 export type OrderDetail = Order & {
   history: Array<{ id: number; from_status_name: string | null; to_status_name: string; comment: string | null; user_name: string; created_at: string }>;
   parts: Array<{ id: number; part_name: string; sku: string; quantity_used: number; purchase_price_at_moment: string; selling_price_at_moment: string }>;
-  payments: Array<{ id: number; amount: string; payment_method_name: string; is_prepayment: boolean; created_at: string }>;
+  payments: Array<{ id: number; amount: string; payment_method_name: string; is_prepayment: boolean; created_at: string; refunded_at: string | null; refund_reason: string | null }>;
+  group_name: string | null;
 };
 
 export function getOrder(id: number) {
@@ -116,9 +124,11 @@ export type CreateOrderInput = {
   master_id?: number;
   deadline?: string;
   priority?: 'normal' | 'urgent' | 'critical';
-  source?: string;
+  source: string;
   estimated_cost?: number;
   discount?: number;
+  parts?: Array<{ part_id: number; quantity: number }>;
+  group_id?: number;
 };
 
 export function createOrder(input: CreateOrderInput) {
@@ -213,6 +223,13 @@ export function createPayment(data: CreatePaymentInput) {
 
 export function deletePayment(id: number) {
   return request(`/payments/${id}`, { method: 'DELETE' });
+}
+
+export function refundPayment(id: number, reason?: string) {
+  return request<{ success: boolean }>(`/payments/${id}/refund`, {
+    method: 'PATCH',
+    body: JSON.stringify({ reason })
+  });
 }
 
 export type MasterPayout = {
@@ -318,4 +335,27 @@ export function updateUser(id: number, data: UserUpdateInput) {
 
 export function deleteUser(id: number) {
   return request<{ message: string }>(`/users/${id}`, { method: 'DELETE' });
+}
+
+// --- Order Groups ---
+export type OrderGroup = {
+  id: number;
+  name: string;
+  created_at: string;
+  order_count: number;
+};
+
+export function getOrderGroups() {
+  return request<OrderGroup[]>('/order-groups');
+}
+
+export function createOrderGroup(name: string) {
+  return request<OrderGroup>('/order-groups', {
+    method: 'POST',
+    body: JSON.stringify({ name })
+  });
+}
+
+export function deleteOrderGroup(id: number) {
+  return request<{ message: string }>(`/order-groups/${id}`, { method: 'DELETE' });
 }

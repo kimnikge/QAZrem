@@ -15,6 +15,11 @@ ordersRouter.use(requireAuth);
 // Схемы валидации
 // ============================================================
 
+const orderPartSchema = z.object({
+  part_id: z.number().int().positive(),
+  quantity: z.number().int().positive()
+});
+
 const createOrderWithNewDeviceSchema = z.object({
   client: z.object({
     name: z.string().min(2),
@@ -34,9 +39,11 @@ const createOrderWithNewDeviceSchema = z.object({
   master_commission_pct: z.number().min(0).max(100).optional(),
   deadline: z.string().optional(),
   priority: z.enum(['normal', 'urgent', 'critical']).optional(),
-  source: z.string().optional(),
+  source: z.string().min(1, 'Укажите откуда пришёл клиент'),
   estimated_cost: z.number().nonnegative().optional(),
-  discount: z.number().nonnegative().optional()
+  discount: z.number().nonnegative().optional(),
+  parts: z.array(orderPartSchema).optional(),
+  group_id: z.number().int().positive().optional().nullable()
 });
 
 const createOrderWithExistingDeviceSchema = z.object({
@@ -46,9 +53,11 @@ const createOrderWithExistingDeviceSchema = z.object({
   master_commission_pct: z.number().min(0).max(100).optional(),
   deadline: z.string().optional(),
   priority: z.enum(['normal', 'urgent', 'critical']).optional(),
-  source: z.string().optional(),
+  source: z.string().min(1, 'Укажите откуда пришёл клиент'),
   estimated_cost: z.number().nonnegative().optional(),
-  discount: z.number().nonnegative().optional()
+  discount: z.number().nonnegative().optional(),
+  parts: z.array(orderPartSchema).optional(),
+  group_id: z.number().int().positive().optional().nullable()
 });
 
 const updateStatusSchema = z.object({
@@ -77,7 +86,7 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
 // ============================================================
 ordersRouter.get('/', async (req, res, next) => {
   try {
-    const { status, master_id, search, limit = '50', offset = '0' } = req.query;
+    const { status, master_id, search, overdue, my, group_id, limit = '50', offset = '0' } = req.query;
     const limitNum = Math.min(Math.max(parseInt(limit as string, 10) || 50, 1), 200);
     const offsetNum = Math.max(parseInt(offset as string, 10) || 0, 0);
 
@@ -87,17 +96,27 @@ ordersRouter.get('/', async (req, res, next) => {
         o.issue_description, o.diagnosis,
         o.cost, o.estimated_cost, o.prepaid, o.discount, o.internal_comment,
         o.deadline, o.status_deadline, o.priority, o.source,
-        o.master_commission_pct,
+        o.master_commission_pct, o.group_id,
         o.created_at, o.completed_at,
+        (o.deadline IS NOT NULL AND o.deadline < NOW() AND os.is_final = FALSE) AS is_overdue,
         os.name AS status_name, os.slug AS status_slug,
         d.brand, d.model, d.imei,
         c.id AS client_id, c.name AS client_name, c.phone AS client_phone, c.address AS client_address,
-        u.name AS master_name
+        u.name AS master_name, og.name AS group_name,
+        cu.name AS created_by_name
       FROM orders o
       JOIN order_statuses os ON os.id = o.status_id
       JOIN devices d ON d.id = o.device_id
       JOIN clients c ON c.id = d.client_id
       LEFT JOIN users u ON u.id = o.master_id
+      LEFT JOIN order_groups og ON og.id = o.group_id
+      LEFT JOIN LATERAL (
+        SELECT uh.user_id, us.name
+        FROM order_history uh
+        LEFT JOIN users us ON us.id = uh.user_id
+        WHERE uh.order_id = o.id AND uh.from_status_id IS NULL
+        ORDER BY uh.created_at LIMIT 1
+      ) cu ON true
       WHERE 1=1
     `;
     const params: unknown[] = [];
@@ -115,6 +134,21 @@ ordersRouter.get('/', async (req, res, next) => {
       sql += ` AND (c.name ILIKE $${idx} OR c.phone ILIKE $${idx} OR d.imei ILIKE $${idx})`;
       params.push(`%${search}%`);
       idx++;
+    }
+    if (overdue === 'true') {
+      sql += ` AND o.deadline IS NOT NULL AND o.deadline < NOW() AND os.is_final = FALSE`;
+    }
+    if (my === 'true' && req.user?.userId) {
+      sql += ` AND o.master_id = $${idx++}`;
+      params.push(req.user.userId);
+    }
+    if (group_id) {
+      if (group_id === 'null') {
+        sql += ' AND o.group_id IS NULL';
+      } else {
+        sql += ` AND o.group_id = $${idx++}`;
+        params.push(Number(group_id));
+      }
     }
 
     // Общее количество (для пагинации)
@@ -141,6 +175,83 @@ ordersRouter.get('/', async (req, res, next) => {
 });
 
 // ============================================================
+// GET /orders/export — экспорт заказов в CSV
+// ============================================================
+ordersRouter.get('/export', requireRole('admin'), async (req, res, next) => {
+  try {
+    const { status, master_id, search, overdue, group_id } = req.query;
+
+    let sql = `
+      SELECT
+        o.id, os.name AS status, o.priority,
+        TO_CHAR(o.deadline, 'DD.MM.YYYY') AS deadline,
+        c.name AS client, c.phone,
+        d.brand || ' ' || d.model AS device, d.imei,
+        o.issue_description, o.cost, o.discount,
+        (o.cost - o.discount) AS total,
+        og.name AS "group",
+        TO_CHAR(o.created_at, 'DD.MM.YYYY HH24:MI') AS created
+      FROM orders o
+      JOIN order_statuses os ON os.id = o.status_id
+      JOIN devices d ON d.id = o.device_id
+      JOIN clients c ON c.id = d.client_id
+      LEFT JOIN order_groups og ON og.id = o.group_id
+      WHERE 1=1
+    `;
+    const params: unknown[] = [];
+    let idx = 1;
+
+    if (status) { sql += ` AND os.slug = $${idx++}`; params.push(status); }
+    if (master_id) { sql += ` AND o.master_id = $${idx++}`; params.push(Number(master_id)); }
+    if (search) {
+      sql += ` AND (c.name ILIKE $${idx} OR c.phone ILIKE $${idx} OR d.imei ILIKE $${idx})`;
+      params.push(`%${search}%`); idx++;
+    }
+    if (overdue === 'true') {
+      sql += ` AND o.deadline IS NOT NULL AND o.deadline < NOW() AND os.is_final = FALSE`;
+    }
+    if (group_id) {
+      if (group_id === 'null') sql += ' AND o.group_id IS NULL';
+      else { sql += ` AND o.group_id = $${idx++}`; params.push(Number(group_id)); }
+    }
+
+    sql += ' ORDER BY o.created_at DESC LIMIT 5000';
+    const result = await pool.query(sql, params);
+
+    // CSV: разделитель ; для Excel в русской локали
+    const headers = ['№', 'Статус', 'Приоритет', 'Срок', 'Клиент', 'Телефон', 'Устройство', 'IMEI', 'Проблема', 'Стоимость', 'Скидка', 'Итого', 'Группа', 'Создан'];
+    const csvRows = [headers.join(';')];
+
+    for (const row of result.rows) {
+      csvRows.push([
+        row.id,
+        `"${(row.status || '').replace(/"/g, '""')}"`,
+        row.priority === 'normal' ? '' : row.priority,
+        row.deadline || '',
+        `"${(row.client || '').replace(/"/g, '""')}"`,
+        row.phone || '',
+        `"${(row.device || '').replace(/"/g, '""')}"`,
+        row.imei || '',
+        `"${(row.issue_description || '').replace(/"/g, '""')}"`,
+        row.cost,
+        row.discount,
+        row.total,
+        `"${(row.group || '').replace(/"/g, '""')}"`,
+        row.created
+      ].join(';'));
+    }
+
+    // BOM для Excel (UTF-8)
+    const csv = '\uFEFF' + csvRows.join('\n');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="orders_${new Date().toISOString().split('T')[0]}.csv"`);
+    res.send(csv);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ============================================================
 // GET /orders/:id — детали заказа
 // ============================================================
 ordersRouter.get('/:id', async (req, res, next) => {
@@ -153,17 +264,25 @@ ordersRouter.get('/:id', async (req, res, next) => {
         o.issue_description, o.diagnosis, o.cost, o.estimated_cost,
         o.prepaid, o.discount, o.internal_comment,
         o.deadline, o.status_deadline, o.priority, o.source,
-        o.master_commission_pct,
+        o.master_commission_pct, o.group_id,
         o.created_at, o.completed_at,
         os.name AS status_name, os.slug AS status_slug, os.is_final,
         d.brand, d.model, d.imei, d.serial_number, d.color,
         c.id AS client_id, c.name AS client_name, c.phone AS client_phone, c.email AS client_email, c.address AS client_address,
-        u.name AS master_name
+        u.name AS master_name, og.name AS group_name,
+        cu.name AS created_by_name
       FROM orders o
       JOIN order_statuses os ON os.id = o.status_id
       JOIN devices d ON d.id = o.device_id
       JOIN clients c ON c.id = d.client_id
       LEFT JOIN users u ON u.id = o.master_id
+      LEFT JOIN order_groups og ON og.id = o.group_id
+      LEFT JOIN LATERAL (
+        SELECT us.name FROM order_history uh
+        LEFT JOIN users us ON us.id = uh.user_id
+        WHERE uh.order_id = o.id AND uh.from_status_id IS NULL
+        ORDER BY uh.created_at LIMIT 1
+      ) cu ON true
       WHERE o.id = $1`,
       [id]
     );
@@ -252,7 +371,8 @@ const updateOrderSchema = z.object({
   master_commission_pct: z.number().min(0).max(100).optional(),
   deadline: z.string().optional(),
   priority: z.enum(['normal', 'urgent', 'critical']).optional(),
-  source: z.string().optional()
+  source: z.string().optional(),
+  group_id: z.number().int().positive().optional().nullable()
 });
 
 ordersRouter.patch('/:id', requireRole('admin', 'master'), async (req, res, next) => {
@@ -395,8 +515,8 @@ ordersRouter.post('/', requireRole('admin', 'reception'), async (req, res, next)
 
     // Создаём заказ
     const orderResult = await client.query(
-      `INSERT INTO orders (device_id, master_id, status_id, issue_description, deadline, priority, source, estimated_cost, discount, master_commission_pct)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      `INSERT INTO orders (device_id, master_id, status_id, issue_description, deadline, priority, source, estimated_cost, discount, master_commission_pct, group_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        RETURNING id`,
       [
         deviceId,
@@ -408,7 +528,8 @@ ordersRouter.post('/', requireRole('admin', 'reception'), async (req, res, next)
         req.body.source || null,
         req.body.estimated_cost || 0,
         req.body.discount || 0,
-        masterCommissionPct
+        masterCommissionPct,
+        req.body.group_id || null
       ]
     );
     const orderId = orderResult.rows[0].id;
@@ -419,6 +540,47 @@ ordersRouter.post('/', requireRole('admin', 'reception'), async (req, res, next)
        VALUES ($1, $2, NULL, $3, 'Создан заказ')`,
       [orderId, req.user!.userId, newStatusId]
     );
+
+    // Списание запчастей (если переданы)
+    const parts: Array<{ part_id: number; quantity: number }> = req.body.parts || [];
+    for (const part of parts) {
+      // Проверяем остаток
+      const stockResult = await client.query(
+        'SELECT quantity, purchase_price, selling_price FROM parts WHERE id = $1 FOR UPDATE',
+        [part.part_id]
+      );
+      if (stockResult.rows.length === 0) {
+        throw new NotFoundError(`Запчасть с id=${part.part_id}`);
+      }
+      if (stockResult.rows[0].quantity < part.quantity) {
+        throw new BadRequestError(
+          `Недостаточно запчасти #${part.part_id} на складе (остаток: ${stockResult.rows[0].quantity}, требуется: ${part.quantity})`
+        );
+      }
+
+      const purchasePrice = Number(stockResult.rows[0].purchase_price);
+      const sellingPrice = Number(stockResult.rows[0].selling_price);
+
+      // Уменьшаем остаток
+      await client.query(
+        'UPDATE parts SET quantity = quantity - $1 WHERE id = $2',
+        [part.quantity, part.part_id]
+      );
+
+      // Запись в order_parts
+      await client.query(
+        `INSERT INTO order_parts (order_id, part_id, quantity_used, purchase_price_at_moment, selling_price_at_moment)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [orderId, part.part_id, part.quantity, purchasePrice, sellingPrice]
+      );
+
+      // Запись в part_movements
+      await client.query(
+        `INSERT INTO part_movements (part_id, type, quantity, order_id)
+         VALUES ($1, 'outgoing', $2, $3)`,
+        [part.part_id, part.quantity, orderId]
+      );
+    }
 
     await client.query('COMMIT');
 
@@ -433,14 +595,19 @@ ordersRouter.post('/', requireRole('admin', 'reception'), async (req, res, next)
     );
 
     const o = fullOrder.rows[0];
-    await sendTelegramMessage(
-      [
-        '<b>🆕 Новый заказ</b>',
-        `№${o.id} | ${o.brand} ${o.model}`,
-        `Клиент: ${o.client_name} (${o.phone})`,
-        `Проблема: ${o.issue_description}`
-      ].join('\n')
-    );
+    // Уведомление в Telegram (не блокирует создание заказа)
+    try {
+      await sendTelegramMessage(
+        [
+          '<b>🆕 Новый заказ</b>',
+          `№${o.id} | ${o.brand} ${o.model}`,
+          `Клиент: ${o.client_name} (${o.phone})`,
+          `Проблема: ${o.issue_description}`
+        ].join('\n')
+      );
+    } catch (tgError) {
+      console.error('Telegram notification failed:', tgError instanceof Error ? tgError.message : tgError);
+    }
 
     res.status(201).json({ id: orderId });
   } catch (error) {

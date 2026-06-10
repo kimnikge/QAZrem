@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { Download } from 'lucide-react';
 import {
   getFinanceReport, getMasterPayouts, getAllUsers,
   type FinanceReport, type MasterPayoutsResponse
 } from '../api';
+
+const apiUrl = import.meta.env.VITE_API_URL || '/api';
 
 type Tab = 'overview' | 'payouts';
 type ModalType = 'income' | 'paid' | 'debt' | 'expenses' | 'profit' | null;
@@ -53,9 +56,27 @@ export function FinancePage() {
       <div className="page-header"><h2>Финансы</h2></div>
 
       {/* Tabs */}
-      <div className="ro-tabs">
-        <button className={`ro-tab${tab === 'overview' ? ' active' : ''}`} onClick={() => setTab('overview')}>Общий отчёт</button>
-        <button className={`ro-tab${tab === 'payouts' ? ' active' : ''}`} onClick={() => setTab('payouts')}>Расчёт мастерам</button>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+        <div className="ro-tabs" style={{ flex: 1 }}>
+          <button className={`ro-tab${tab === 'overview' ? ' active' : ''}`} onClick={() => setTab('overview')}>Общий отчёт</button>
+          <button className={`ro-tab${tab === 'payouts' ? ' active' : ''}`} onClick={() => setTab('payouts')}>Расчёт мастерам</button>
+        </div>
+        {tab === 'overview' && report && isAdmin && (
+          <button className="btn-secondary" onClick={() => {
+            const token = sessionStorage.getItem('token');
+            fetch(`${apiUrl}/finance/report/export`, { headers: { Authorization: `Bearer ${token}` } })
+              .then(res => res.blob())
+              .then(blob => {
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = `finance_report_${new Date().toISOString().split('T')[0]}.csv`;
+                a.click();
+              })
+              .catch(console.error);
+          }}>
+            <Download size={14} /> Экспорт
+          </button>
+        )}
       </div>
 
       {tab === 'overview' && report && (

@@ -1,7 +1,8 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { createOrder, search, getMasters, searchDeviceCatalog, searchDeviceByImei,
-  type CreateOrderInput, type CatalogItem, type ImeiSearchResult } from '../api';
+import { createOrder, search, getMasters, searchDeviceCatalog, searchDeviceByImei, getParts, getOrderGroups,
+  type CreateOrderInput, type CatalogItem, type ImeiSearchResult, type Part, type SearchResult, type OrderGroup } from '../api';
+import { Wrench, FileText, Plus, Trash2, UserPlus } from 'lucide-react';
 
 const priorities = [
   { value: 'normal', label: 'Обычный' },
@@ -10,9 +11,8 @@ const priorities = [
 ];
 
 const sources = [
-  { value: '', label: '—' },
-  { value: 'сайт', label: 'Сайт' },
   { value: 'звонок', label: 'Звонок' },
+  { value: 'сайт', label: 'Сайт' },
   { value: 'instagram', label: 'Instagram' },
   { value: '2gis', label: '2GIS' },
   { value: 'реклама', label: 'Реклама' },
@@ -24,17 +24,29 @@ export function CreateOrderPage() {
   const navigate = useNavigate();
   const [masters, setMasters] = useState<Array<{ id: number; name: string }>>([]);
 
-  const [step, setStep] = useState<'search' | 'form' | 'loading'>('search');
-  const [query, setQuery] = useState('');
-  const [searchResult, setSearchResult] = useState<string>('');
-  const [searchClientId, setSearchClientId] = useState<number | null>(null);
+  // Инлайн-поиск клиента (как в RO App)
+  const [clientQuery, setClientQuery] = useState('');
+  const [clientSuggestions, setClientSuggestions] = useState<SearchResult['clients']>([]);
+  const [showClientSuggestions, setShowClientSuggestions] = useState(false);
+  const [selectedClientId, setSelectedClientId] = useState<number | null>(null);
+  const clientTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const [form, setForm] = useState<CreateOrderInput>({
     client: { name: '', phone: '', email: '', address: '' },
     device: { brand: '', model: '', imei: '', serial_number: '', color: '' },
     issue_description: '',
+    source: 'звонок',
   });
   const [error, setError] = useState('');
+
+  // Вкладки: основное / запчасти
+  const [tab, setTab] = useState<'general' | 'parts'>('general');
+
+  // Запчасти
+  const [allParts, setAllParts] = useState<Part[]>([]);
+  const [selectedParts, setSelectedParts] = useState<Array<{ part_id: number; quantity: number; name: string; sku: string; selling_price: string }>>([]);
+  const [partsLoading, setPartsLoading] = useState(false);
+  const [groups, setGroups] = useState<OrderGroup[]>([]);
 
   // Autocomplete for device brand/model
   const [catalogSuggestions, setCatalogSuggestions] = useState<CatalogItem[]>([]);
@@ -49,7 +61,44 @@ export function CreateOrderPage() {
 
   useEffect(() => {
     getMasters().then(setMasters).catch(() => {});
+    getOrderGroups().then(setGroups).catch(() => {});
   }, []);
+
+  // Загружаем запчасти при переходе на вкладку
+  useEffect(() => {
+    if (tab === 'parts' && allParts.length === 0) {
+      setPartsLoading(true);
+      getParts().then(setAllParts).catch(() => {}).finally(() => setPartsLoading(false));
+    }
+  }, [tab]);
+
+  function addPart(part: Part) {
+    const existing = selectedParts.find(p => p.part_id === part.id);
+    if (existing) {
+      setSelectedParts(prev => prev.map(p =>
+        p.part_id === part.id ? { ...p, quantity: p.quantity + 1 } : p
+      ));
+    } else {
+      setSelectedParts(prev => [...prev, {
+        part_id: part.id,
+        quantity: 1,
+        name: part.name,
+        sku: part.sku,
+        selling_price: part.selling_price
+      }]);
+    }
+  }
+
+  function removePart(partId: number) {
+    setSelectedParts(prev => prev.filter(p => p.part_id !== partId));
+  }
+
+  function updatePartQuantity(partId: number, qty: number) {
+    if (qty < 1) return;
+    setSelectedParts(prev => prev.map(p =>
+      p.part_id === partId ? { ...p, quantity: qty } : p
+    ));
+  }
 
   function handleCatalogInput(field: 'brand' | 'model', value: string) {
     setDevice(field, value);
@@ -93,8 +142,8 @@ export function CreateOrderPage() {
       client: { name: dev.client_name, phone: dev.client_phone, email: '', address: '' },
       device: { brand: dev.brand, model: dev.model, imei: dev.imei, serial_number: '', color: '' }
     }));
-    setSearchResult(`Найден: ${dev.client_name} (${dev.client_phone}) — устройство ${dev.brand} ${dev.model}`);
-    setSearchClientId(dev.client_id);
+    setSelectedClientId(dev.client_id);
+    setClientQuery(`${dev.client_name} · ${dev.client_phone}`);
     setShowImei(false);
   }
 
@@ -105,39 +154,47 @@ export function CreateOrderPage() {
     setForm(prev => ({ ...prev, device: { ...prev.device, [field]: value } }));
   }
 
-  async function handleSearch(e: FormEvent) {
-    e.preventDefault();
-    if (!query.trim()) return;
-    setStep('loading');
-    setError('');
-    try {
-      const res = await search(query.trim());
-      if (res.matchType === 'no_results') {
-        setSearchResult('Клиент не найден. Заполните форму.');
-        setSearchClientId(null);
-        setForm(prev => ({
-          ...prev,
-          client: { name: query, phone: '', email: '', address: '' },
-          device: { brand: '', model: '', imei: '', serial_number: '', color: '' },
-        }));
-      } else {
-        const c = res.clients[0];
-        setSearchResult(`Найден: ${c.client.name} (${c.client.phone})`);
-        setSearchClientId(c.client.id);
-        setForm(prev => ({
-          ...prev,
-          client: { name: c.client.name, phone: c.client.phone, email: c.client.email || '', address: (c.client as any).address || '' },
-          device: { brand: '', model: '', imei: '', serial_number: '', color: '' },
-        }));
-      }
-      setStep('form');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка поиска');
-      setStep('search');
-    }
+  // Инлайн-поиск клиента (по имени, телефону, IMEI)
+  function handleClientSearch(value: string) {
+    setClientQuery(value);
+    if (clientTimer.current) clearTimeout(clientTimer.current);
+    if (value.trim().length < 2) { setShowClientSuggestions(false); return; }
+    clientTimer.current = setTimeout(async () => {
+      try {
+        const res = await search(value.trim());
+        if (res.clients.length > 0) {
+          setClientSuggestions(res.clients);
+          setShowClientSuggestions(true);
+        } else {
+          setShowClientSuggestions(false);
+        }
+      } catch { setShowClientSuggestions(false); }
+    }, 350);
   }
 
-  async function handleSubmit(e: FormEvent) {
+  function selectClient(clientItem: SearchResult['clients'][0]) {
+    const c = clientItem.client;
+    setForm(prev => ({
+      ...prev,
+      client: { name: c.name, phone: c.phone, email: (c as any).email || '', address: (c as any).address || '' }
+    }));
+    setSelectedClientId(c.id);
+    setClientQuery(`${c.name} · ${c.phone}`);
+    setShowClientSuggestions(false);
+  }
+
+  function clearClientSelection() {
+    setSelectedClientId(null);
+    setClientQuery('');
+    setForm(prev => ({
+      ...prev,
+      client: { name: '', phone: '', email: '', address: '' }
+    }));
+  }
+
+  type SubmitMode = 'create' | 'create_open' | 'create_new';
+
+  async function handleSubmit(e: FormEvent, mode: SubmitMode) {
     e.preventDefault();
     setError('');
     try {
@@ -148,7 +205,9 @@ export function CreateOrderPage() {
         discount: form.discount ? Number(form.discount) : undefined,
         deadline: form.deadline || undefined,
         priority: (form.priority as 'normal' | 'urgent' | 'critical') || undefined,
-        source: form.source || undefined,
+        source: form.source,
+        parts: selectedParts.length > 0 ? selectedParts.map(p => ({ part_id: p.part_id, quantity: p.quantity })) : undefined,
+        group_id: form.group_id || undefined,
         client: {
           ...form.client,
           email: form.client.email || undefined,
@@ -161,7 +220,24 @@ export function CreateOrderPage() {
         },
       };
       const res = await createOrder(payload);
-      navigate(`/orders/${res.id}`);
+
+      if (mode === 'create_open') {
+        navigate(`/orders/${res.id}`);
+      } else {
+        // Сброс формы для нового заказа
+        setForm({
+          client: { name: '', phone: '', email: '', address: '' },
+          device: { brand: '', model: '', imei: '', serial_number: '', color: '' },
+          issue_description: '',
+          source: 'звонок',
+        });
+        setSelectedParts([]);
+        setClientQuery('');
+        setSelectedClientId(null);
+        if (mode === 'create') {
+          navigate('/');
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка создания');
     }
@@ -173,151 +249,251 @@ export function CreateOrderPage() {
     <div>
       <div className="page-header"><h2>Новый заказ</h2></div>
 
-      {step === 'search' || step === 'loading' ? (
-        <form onSubmit={handleSearch} className="search-form">
-          <label>Поиск клиента по имени, телефону или IMEI</label>
-          <div className="search-row">
+      {error && <div className="glass-error">⚠ {error}</div>}
+
+      <form onSubmit={(e) => handleSubmit(e, 'create_open')} className="glass-form">
+        {/* Вкладки */}
+        <div className="glass-tabs">
+          <button type="button" className={`glass-tab${tab === 'general' ? ' active' : ''}`} onClick={() => setTab('general')}>
+            <FileText size={16} /> Основное
+          </button>
+          <button type="button" className={`glass-tab${tab === 'parts' ? ' active' : ''}`} onClick={() => setTab('parts')}>
+            <Wrench size={16} /> Запчасти и услуги
+            {selectedParts.length > 0 && <span className="ro-tab-count">{selectedParts.length}</span>}
+          </button>
+        </div>
+
+        {tab === 'general' && (
+        <>
+        {/* Клиент */}
+        <div className="glass-card">
+          <div className="glass-card-legend">Клиент</div>
+          <div style={{ position: 'relative', marginBottom: 14 }}>
             <input
               type="text"
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              placeholder="Телефон, имя или IMEI..."
+              value={clientQuery}
+              onChange={e => handleClientSearch(e.target.value)}
+              onFocus={() => clientSuggestions.length > 0 && setShowClientSuggestions(true)}
+              onBlur={() => setTimeout(() => setShowClientSuggestions(false), 200)}
+              placeholder="🔍 Введите имя, телефон или IMEI для поиска..."
               autoFocus
-              required
+              className="glass-search"
             />
-            <button type="submit" className="btn-primary" disabled={step === 'loading'}>
-              {step === 'loading' ? 'Поиск...' : 'Найти'}
-            </button>
+            {selectedClientId && (
+              <button
+                type="button"
+                onClick={clearClientSelection}
+                style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#9aa0a6', fontSize: 20, lineHeight: 1 }}
+                title="Очистить выбор клиента"
+              >×</button>
+            )}
+            {showClientSuggestions && (
+              <div className="glass-suggestions">
+                {clientSuggestions.map(item => (
+                  <div
+                    key={item.client.id}
+                    className="glass-suggestion-item"
+                    onMouseDown={() => selectClient(item)}
+                  >
+                    <div style={{ fontWeight: 500, fontSize: 14 }}>{item.client.name}</div>
+                    <div style={{ fontSize: 12, color: '#5f6368', marginTop: 2 }}>
+                      {item.client.phone}
+                      {item.devices.length > 0 && (
+                        <span> · {item.devices.map(d => `${d.brand} ${d.model}`).join(', ')}</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-        </form>
-      ) : null}
-
-      {error && <div className="error-message">{error}</div>}
-
-      {step === 'form' && (
-        <>
-          {searchResult && <div className="search-result">{searchResult}</div>}
-          {searchClientId && (
-            <div style={{ fontSize: 13, color: '#5f6368', marginBottom: 12 }}>
-              ID клиента: <code>{searchClientId}</code>
+          {selectedClientId && (
+            <div className="glass-found-badge">
+              <UserPlus size={14} /> Клиент найден — данные подставлены
             </div>
           )}
+          <div className="glass-grid glass-grid-2">
+            <input className="glass-input" placeholder="Имя *" value={form.client.name} onChange={e => setClient('name', e.target.value)} required />
+            <input className="glass-input" placeholder="Телефон *" value={form.client.phone} onChange={e => setClient('phone', e.target.value)} required />
+            <input className="glass-input" placeholder="Email" type="email" value={form.client.email || ''} onChange={e => setClient('email', e.target.value)} />
+            <input className="glass-input" placeholder="Адрес" value={form.client.address || ''} onChange={e => setClient('address', e.target.value)} />
+          </div>
+        </div>
 
-          <form onSubmit={handleSubmit} className="order-form">
-            {/* Клиент */}
-            <fieldset>
-              <legend>Клиент</legend>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                <input placeholder="Имя *" value={form.client.name} onChange={e => setClient('name', e.target.value)} required />
-                <input placeholder="Телефон *" value={form.client.phone} onChange={e => setClient('phone', e.target.value)} required />
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                <input placeholder="Email" type="email" value={form.client.email || ''} onChange={e => setClient('email', e.target.value)} />
-                <input placeholder="Адрес" value={form.client.address || ''} onChange={e => setClient('address', e.target.value)} />
-              </div>
-            </fieldset>
-
-            {/* Устройство */}
-            <fieldset>
-              <legend>Устройство</legend>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-                <div style={{ position: 'relative' }}>
-                  <input placeholder="Бренд *" value={form.device.brand} onChange={e => handleCatalogInput('brand', e.target.value)} onFocus={() => form.device.brand.length >= 2 && setShowCatalog(true)} onBlur={() => setTimeout(() => setShowCatalog(false), 200)} required />
-                  {showCatalog && catalogField === 'brand' && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', border: '1px solid var(--border)', borderRadius: 6, zIndex: 10, maxHeight: 180, overflow: 'auto', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
-                      {[...new Set(catalogSuggestions.map(i => i.brand))].map(b => (
-                        <div key={b} style={{ padding: '8px 12px', cursor: 'pointer', fontSize: 14 }} onMouseDown={() => selectCatalog(catalogSuggestions.find(i => i.brand === b)!)} onMouseOver={e => (e.currentTarget.style.background = '#f5f5f5')} onMouseOut={e => (e.currentTarget.style.background = '')}>{b}</div>
-                      ))}
-                    </div>
-                  )}
+        {/* Устройство */}
+        <div className="glass-card">
+          <div className="glass-card-legend">Устройство и неисправность</div>
+          <div className="glass-grid glass-grid-3">
+            <div style={{ position: 'relative' }}>
+              <input className="glass-input" placeholder="Бренд *" value={form.device.brand} onChange={e => handleCatalogInput('brand', e.target.value)} onFocus={() => form.device.brand.length >= 2 && setShowCatalog(true)} onBlur={() => setTimeout(() => setShowCatalog(false), 200)} required />
+              {showCatalog && catalogField === 'brand' && (
+                <div className="glass-suggestions">
+                  {[...new Set(catalogSuggestions.map(i => i.brand))].map(b => (
+                    <div key={b} className="glass-suggestion-item" onMouseDown={() => selectCatalog(catalogSuggestions.find(i => i.brand === b)!)}>{b}</div>
+                  ))}
                 </div>
-                <div style={{ position: 'relative' }}>
-                  <input placeholder="Модель *" value={form.device.model} onChange={e => handleCatalogInput('model', e.target.value)} onFocus={() => form.device.model.length >= 2 && setShowCatalog(true)} onBlur={() => setTimeout(() => setShowCatalog(false), 200)} required />
-                  {showCatalog && catalogField === 'model' && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', border: '1px solid var(--border)', borderRadius: 6, zIndex: 10, maxHeight: 180, overflow: 'auto', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
-                      {catalogSuggestions
-                        .filter(i => i.brand === form.device.brand || !form.device.brand)
-                        .map((item, idx) => (
-                          <div key={idx} style={{ padding: '8px 12px', cursor: 'pointer', fontSize: 14 }} onMouseDown={() => selectCatalog(item)} onMouseOver={e => (e.currentTarget.style.background = '#f5f5f5')} onMouseOut={e => (e.currentTarget.style.background = '')}>
-                            {item.brand} {item.model}
-                          </div>
-                        ))}
-                    </div>
-                  )}
-                </div>
-                <div style={{ position: 'relative' }}>
-                  <input placeholder="IMEI *" value={form.device.imei} onChange={e => handleImeiInput(e.target.value)} onFocus={() => showImei && setShowImei(true)} onBlur={() => setTimeout(() => setShowImei(false), 200)} required />
-                  {showImei && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', border: '1px solid var(--border)', borderRadius: 6, zIndex: 10, maxHeight: 200, overflow: 'auto', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
-                      {imeiSuggestions.map(dev => (
-                        <div key={dev.device_id} style={{ padding: '8px 12px', cursor: 'pointer', fontSize: 13 }} onMouseDown={() => selectImeiDevice(dev)} onMouseOver={e => (e.currentTarget.style.background = '#e8f0fe')} onMouseOut={e => (e.currentTarget.style.background = '')}>
-                          <strong>{dev.brand} {dev.model}</strong>
-                          <div style={{ color: '#5f6368' }}>{dev.client_name} · {dev.client_phone} · {dev.imei}</div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                <input placeholder="Серийный номер" value={form.device.serial_number || ''} onChange={e => setDevice('serial_number', e.target.value)} />
-                <input placeholder="Цвет" value={form.device.color || ''} onChange={e => setDevice('color', e.target.value)} />
-              </div>
-            </fieldset>
-
-            {/* Заказ */}
-            <fieldset>
-              <legend>Заказ</legend>
-              <textarea
-                placeholder="Описание проблемы *"
-                value={form.issue_description}
-                onChange={e => setForm(prev => ({ ...prev, issue_description: e.target.value }))}
-                required rows={3}
-              />
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-                <div>
-                  <label style={{ fontSize: 12, color: '#5f6368', display: 'block', marginBottom: 4 }}>Мастер</label>
-                  <select value={form.master_id || ''} onChange={e => setForm(prev => ({ ...prev, master_id: e.target.value ? Number(e.target.value) : undefined }))} style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14 }}>
-                    <option value="">— Не назначен —</option>
-                    {masters.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label style={{ fontSize: 12, color: '#5f6368', display: 'block', marginBottom: 4 }}>Приоритет</label>
-                  <select value={form.priority || ''} onChange={e => setForm(prev => ({ ...prev, priority: e.target.value as CreateOrderInput['priority'] }))} style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14 }}>
-                    {priorities.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label style={{ fontSize: 12, color: '#5f6368', display: 'block', marginBottom: 4 }}>Откуда пришёл</label>
-                  <select value={form.source || ''} onChange={e => setForm(prev => ({ ...prev, source: e.target.value }))} style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14 }}>
-                    {sources.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-                  </select>
-                </div>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 8 }}>
-                <div>
-                  <label style={{ fontSize: 12, color: '#5f6368', display: 'block', marginBottom: 4 }}>Предвар. стоимость</label>
-                  <input type="number" placeholder="0" value={form.estimated_cost ?? ''} onChange={e => setForm(prev => ({ ...prev, estimated_cost: e.target.value ? Number(e.target.value) : undefined }))} style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14 }} />
-                </div>
-                <div>
-                  <label style={{ fontSize: 12, color: '#5f6368', display: 'block', marginBottom: 4 }}>Скидка</label>
-                  <input type="number" placeholder="0" value={form.discount ?? ''} onChange={e => setForm(prev => ({ ...prev, discount: e.target.value ? Number(e.target.value) : undefined }))} style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14 }} />
-                </div>
-                <div>
-                  <label style={{ fontSize: 12, color: '#5f6368', display: 'block', marginBottom: 4 }}>Срок (дедлайн)</label>
-                  <input type="date" value={form.deadline || ''} onChange={e => setForm(prev => ({ ...prev, deadline: e.target.value }))} min={today} style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14 }} />
-                </div>
-              </div>
-            </fieldset>
-
-            <div className="form-actions">
-              <button type="button" className="btn-secondary" onClick={() => navigate('/')}>Отмена</button>
-              <button type="submit" className="btn-primary">Создать заказ</button>
+              )}
             </div>
-          </form>
+            <div style={{ position: 'relative' }}>
+              <input className="glass-input" placeholder="Модель *" value={form.device.model} onChange={e => handleCatalogInput('model', e.target.value)} onFocus={() => form.device.model.length >= 2 && setShowCatalog(true)} onBlur={() => setTimeout(() => setShowCatalog(false), 200)} required />
+              {showCatalog && catalogField === 'model' && (
+                <div className="glass-suggestions">
+                  {catalogSuggestions.filter(i => i.brand === form.device.brand || !form.device.brand).map((item, idx) => (
+                    <div key={idx} className="glass-suggestion-item" onMouseDown={() => selectCatalog(item)}>{item.brand} {item.model}</div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div style={{ position: 'relative' }}>
+              <input className="glass-input" placeholder="IMEI *" value={form.device.imei} onChange={e => handleImeiInput(e.target.value)} onFocus={() => showImei && setShowImei(true)} onBlur={() => setTimeout(() => setShowImei(false), 200)} required />
+              {showImei && (
+                <div className="glass-suggestions">
+                  {imeiSuggestions.map(dev => (
+                    <div key={dev.device_id} className="glass-suggestion-item" onMouseDown={() => selectImeiDevice(dev)}>
+                      <strong>{dev.brand} {dev.model}</strong>
+                      <div style={{ color: '#5f6368', fontSize: 12 }}>{dev.client_name} · {dev.client_phone} · {dev.imei}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="glass-grid glass-grid-2" style={{ marginTop: 10 }}>
+            <input className="glass-input" placeholder="Серийный номер" value={form.device.serial_number || ''} onChange={e => setDevice('serial_number', e.target.value)} />
+            <input className="glass-input" placeholder="Цвет" value={form.device.color || ''} onChange={e => setDevice('color', e.target.value)} />
+          </div>
+          <textarea
+            className="glass-textarea"
+            placeholder="Описание неисправности *"
+            value={form.issue_description}
+            onChange={e => setForm(prev => ({ ...prev, issue_description: e.target.value }))}
+            required
+            rows={2}
+            style={{ marginTop: 10 }}
+          />
+        </div>
+
+        {/* Параметры */}
+        <div className="glass-card">
+          <div className="glass-card-legend">Параметры заказа</div>
+          <div className="glass-grid glass-grid-3">
+            <div>
+              <label className="glass-label">Мастер</label>
+              <select className="glass-select" value={form.master_id || ''} onChange={e => setForm(prev => ({ ...prev, master_id: e.target.value ? Number(e.target.value) : undefined }))}>
+                <option value="">— Не назначен —</option>
+                {masters.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="glass-label">Приоритет</label>
+              <select className="glass-select" value={form.priority || 'normal'} onChange={e => setForm(prev => ({ ...prev, priority: e.target.value as CreateOrderInput['priority'] }))}>
+                {priorities.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="glass-label">Откуда пришёл *</label>
+              <select className="glass-select" value={form.source || ''} onChange={e => setForm(prev => ({ ...prev, source: e.target.value }))} required>
+                <option value="" disabled>— Выберите —</option>
+                {sources.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="glass-grid glass-grid-3" style={{ marginTop: 10 }}>
+            <div>
+              <label className="glass-label">Предв. стоимость</label>
+              <input className="glass-input" type="number" placeholder="0" value={form.estimated_cost ?? ''} onChange={e => setForm(prev => ({ ...prev, estimated_cost: e.target.value ? Number(e.target.value) : undefined }))} />
+            </div>
+            <div>
+              <label className="glass-label">Скидка</label>
+              <input className="glass-input" type="number" placeholder="0" value={form.discount ?? ''} onChange={e => setForm(prev => ({ ...prev, discount: e.target.value ? Number(e.target.value) : undefined }))} />
+            </div>
+            <div>
+              <label className="glass-label">Срок (дедлайн)</label>
+              <input className="glass-input" type="date" value={form.deadline || ''} onChange={e => setForm(prev => ({ ...prev, deadline: e.target.value }))} min={today} />
+            </div>
+          </div>
+          {groups.length > 0 && (
+            <div style={{ marginTop: 10 }}>
+              <label className="glass-label">Группа</label>
+              <select className="glass-select" value={form.group_id || ''} onChange={e => setForm(prev => ({ ...prev, group_id: e.target.value ? Number(e.target.value) : undefined }))}>
+                <option value="">— Без группы —</option>
+                {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+              </select>
+            </div>
+          )}
+        </div>
         </>
-      )}
+        )}
+
+        {tab === 'parts' && (
+        <div className="glass-card">
+          <div className="glass-card-legend">Запчасти и услуги</div>
+          {partsLoading ? <div className="glass-empty">Загрузка...</div> : (
+            <>
+              <div style={{ marginBottom: 14 }}>
+                <label className="glass-label">Добавить запчасть</label>
+                <select
+                  className="glass-select"
+                  value=""
+                  onChange={e => {
+                    const part = allParts.find(p => p.id === Number(e.target.value));
+                    if (part) addPart(part);
+                    e.target.value = '';
+                  }}
+                >
+                  <option value="">— Выберите запчасть —</option>
+                  {allParts.map(p => (
+                    <option key={p.id} value={p.id} disabled={p.quantity < 1}>
+                      {p.name} ({p.sku}) — {Number(p.selling_price)} ₸ | Ост: {p.quantity}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {selectedParts.length === 0 ? (
+                <div className="glass-empty">Запчасти не выбраны</div>
+              ) : (
+                <>
+                  {selectedParts.map(p => (
+                    <div key={p.part_id} className="glass-part-row">
+                      <span style={{ flex: 1 }}>{p.name} <span style={{ color: '#9aa0a6', fontSize: 12 }}>{p.sku}</span></span>
+                      <span style={{ fontWeight: 500 }}>{Number(p.selling_price)} ₸</span>
+                      <input
+                        type="number"
+                        min={1}
+                        value={p.quantity}
+                        onChange={e => updatePartQuantity(p.part_id, Number(e.target.value))}
+                        style={{ width: 56, padding: '6px 8px', border: '1px solid rgba(0,0,0,0.1)', borderRadius: 8, fontSize: 13, textAlign: 'center' }}
+                      />
+                      <span style={{ fontWeight: 600 }}>{Number(p.selling_price) * p.quantity} ₸</span>
+                      <button type="button" onClick={() => removePart(p.part_id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ea4335', padding: 4 }}>
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ))}
+                  <div style={{ textAlign: 'right', marginTop: 10, fontWeight: 600, fontSize: 15, color: 'var(--primary)' }}>
+                    Итого запчасти: {selectedParts.reduce((sum, p) => sum + Number(p.selling_price) * p.quantity, 0)} ₸
+                  </div>
+                </>
+              )}
+            </>
+          )}
+        </div>
+        )}
+
+        <div className="glass-actions">
+          <button type="button" className="glass-btn glass-btn-ghost" onClick={() => navigate('/')}>Отмена</button>
+          <button type="button" className="glass-btn glass-btn-secondary" onClick={(e) => handleSubmit(e, 'create_new')}>
+            <Plus size={16} /> Сохранить и создать ещё
+          </button>
+          <button type="button" className="glass-btn glass-btn-secondary" onClick={(e) => handleSubmit(e, 'create')}>
+            Создать
+          </button>
+          <button type="submit" className="glass-btn glass-btn-primary">
+            Создать и открыть
+          </button>
+        </div>
+      </form>
     </div>
   );
 }

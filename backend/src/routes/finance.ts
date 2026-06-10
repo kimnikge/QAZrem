@@ -31,14 +31,15 @@ financeRouter.get('/report', requireRole('admin'), async (req, res, next) => {
       [fromDate, toDate]
     );
 
-    // Реально оплачено: сумма платежей по завершённым заказам
+    // Реально оплачено: сумма платежей по завершённым заказам (без возвратов)
     const paidResult = await pool.query(
       `SELECT COALESCE(SUM(p.amount), 0) AS total
        FROM payments p
        JOIN orders o ON o.id = p.order_id
        WHERE o.completed_at IS NOT NULL
          AND o.completed_at >= $1
-         AND o.completed_at <= $2`,
+         AND o.completed_at <= $2
+         AND p.refunded_at IS NULL`,
       [fromDate, toDate]
     );
 
@@ -75,10 +76,11 @@ financeRouter.get('/report', requireRole('admin'), async (req, res, next) => {
       [fromDate, toDate]
     );
 
-    // Детализация: платежи для paid
+    // Детализация: платежи для paid (без возвратов)
     const paidOrdersResult = await pool.query(
       `SELECT p.id AS payment_id, p.amount, p.payment_method_id, pm.name AS payment_method_name,
-              p.order_id, o.completed_at, c.name AS client_name
+              p.order_id, o.completed_at, c.name AS client_name,
+              p.refunded_at, p.refund_reason
        FROM payments p
        JOIN orders o ON o.id = p.order_id
        JOIN devices d ON d.id = o.device_id
@@ -87,6 +89,7 @@ financeRouter.get('/report', requireRole('admin'), async (req, res, next) => {
        WHERE o.completed_at IS NOT NULL
          AND o.completed_at >= $1
          AND o.completed_at <= $2
+         AND p.refunded_at IS NULL
        ORDER BY o.completed_at DESC`,
       [fromDate, toDate]
     );
@@ -102,6 +105,7 @@ financeRouter.get('/report', requireRole('admin'), async (req, res, next) => {
        LEFT JOIN (
          SELECT order_id, SUM(amount) AS paid_total
          FROM payments
+         WHERE refunded_at IS NULL
          GROUP BY order_id
        ) payments ON payments.order_id = o.id
        WHERE o.completed_at IS NOT NULL
@@ -201,6 +205,136 @@ financeRouter.get('/report', requireRole('admin'), async (req, res, next) => {
     next(error);
   }
 });
+
+// GET /finance/report/export — экспорт финансового отчёта в CSV (только admin)
+financeRouter.get('/report/export', requireRole('admin'), async (req, res, next) => {
+  try {
+    const { from, to } = reportSchema.parse(req.query);
+    const fromDate = from || '1970-01-01';
+    const toDate = to || '2999-12-31';
+
+    // Завершённые заказы за период
+    const ordersResult = await pool.query(
+      `SELECT o.id, TO_CHAR(o.completed_at, 'DD.MM.YYYY') AS date,
+              c.name AS client, c.phone,
+              d.brand || ' ' || d.model AS device,
+              o.cost, o.discount, (o.cost - o.discount) AS total,
+              os.name AS status
+       FROM orders o
+       JOIN devices d ON d.id = o.device_id
+       JOIN clients c ON c.id = d.client_id
+       JOIN order_statuses os ON os.id = o.status_id
+       WHERE o.completed_at IS NOT NULL
+         AND o.completed_at >= $1 AND o.completed_at <= $2
+       ORDER BY o.completed_at DESC`,
+      [fromDate, toDate]
+    );
+
+    // Платежи
+    const paymentsResult = await pool.query(
+      `SELECT o.id AS order_id, c.name AS client,
+              TO_CHAR(p.created_at, 'DD.MM.YYYY') AS date,
+              p.amount, pm.name AS method, p.is_prepayment
+       FROM payments p
+       JOIN orders o ON o.id = p.order_id
+       JOIN devices d ON d.id = o.device_id
+       JOIN clients c ON c.id = d.client_id
+       JOIN payment_methods pm ON pm.id = p.payment_method_id
+       WHERE o.completed_at IS NOT NULL
+         AND o.completed_at >= $1 AND o.completed_at <= $2
+         AND p.refunded_at IS NULL
+       ORDER BY p.created_at DESC`,
+      [fromDate, toDate]
+    );
+
+    // Расходы
+    const expensesResult = await pool.query(
+      `SELECT e.id, TO_CHAR(e.created_at, 'DD.MM.YYYY') AS date,
+              ec.name AS category, e.amount, e.description
+       FROM expenses e
+       JOIN expense_categories ec ON ec.id = e.category_id
+       WHERE e.created_at >= $1 AND e.created_at <= $2
+       ORDER BY e.created_at DESC`,
+      [fromDate, toDate]
+    );
+
+    // Запчасти (списания)
+    const partsResult = await pool.query(
+      `SELECT op.order_id, p.name AS part, op.quantity_used,
+              op.purchase_price_at_moment AS purchase_price,
+              (op.purchase_price_at_moment * op.quantity_used) AS cost
+       FROM order_parts op
+       JOIN parts p ON p.id = op.part_id
+       JOIN orders o ON o.id = op.order_id
+       WHERE o.completed_at IS NOT NULL
+         AND o.completed_at >= $1 AND o.completed_at <= $2
+       ORDER BY o.completed_at DESC`,
+      [fromDate, toDate]
+    );
+
+    const BOM = '\uFEFF';
+    const sep = ';';
+
+    // Секция: Заказы
+    let csv = BOM + '=== ЗАКАЗЫ ===\n';
+    csv += ['№', 'Дата', 'Клиент', 'Телефон', 'Устройство', 'Стоимость', 'Скидка', 'Итого', 'Статус'].join(sep) + '\n';
+    for (const r of ordersResult.rows) {
+      csv += [r.id, r.date, csvEscape(r.client), r.phone, csvEscape(r.device), r.cost, r.discount, r.total, r.status].join(sep) + '\n';
+    }
+    const totalIncome = ordersResult.rows.reduce((s: number, r: any) => s + Number(r.total), 0);
+    const totalCost = ordersResult.rows.reduce((s: number, r: any) => s + Number(r.cost), 0);
+    const totalDiscount = ordersResult.rows.reduce((s: number, r: any) => s + Number(r.discount), 0);
+    csv += `\nИТОГО ДОХОДЫ (после скидок):;;;${totalIncome}\n`;
+    csv += `ИТОГО СТОИМОСТЬ (до скидок):;;;${totalCost}\n`;
+    csv += `ИТОГО СКИДОК:;;;${totalDiscount}\n\n`;
+
+    // Секция: Платежи
+    csv += '=== ПЛАТЕЖИ ===\n';
+    csv += ['Заказ №', 'Клиент', 'Дата', 'Сумма', 'Способ', 'Тип'].join(sep) + '\n';
+    for (const r of paymentsResult.rows) {
+      csv += [r.order_id, csvEscape(r.client), r.date, r.amount, r.method, r.is_prepayment ? 'Предоплата' : 'Доплата'].join(sep) + '\n';
+    }
+    const totalPaid = paymentsResult.rows.reduce((s: number, r: any) => s + Number(r.amount), 0);
+    csv += `\nИТОГО ОПЛАЧЕНО:;;;${totalPaid}\n\n`;
+
+    // Секция: Расходы
+    csv += '=== РАСХОДЫ ===\n';
+    csv += ['ID', 'Дата', 'Категория', 'Сумма', 'Описание'].join(sep) + '\n';
+    for (const r of expensesResult.rows) {
+      csv += [r.id, r.date, csvEscape(r.category), r.amount, csvEscape(r.description || '')].join(sep) + '\n';
+    }
+    const totalExpenses = expensesResult.rows.reduce((s: number, r: any) => s + Number(r.amount), 0);
+
+    // Секция: Запчасти
+    csv += '\n=== ЗАПЧАСТИ (списания) ===\n';
+    csv += ['Заказ №', 'Запчасть', 'Кол-во', 'Закуп. цена', 'Сумма'].join(sep) + '\n';
+    for (const r of partsResult.rows) {
+      csv += [r.order_id, csvEscape(r.part), r.quantity_used, r.purchase_price, r.cost].join(sep) + '\n';
+    }
+    const totalPartsCost = partsResult.rows.reduce((s: number, r: any) => s + Number(r.cost), 0);
+
+    // Итоговые показатели
+    const totalAllExpenses = totalExpenses + totalPartsCost;
+    const profit = totalPaid - totalAllExpenses;
+    csv += `\nИТОГО РАСХОДЫ (без запчастей):;;;${totalExpenses}\n`;
+    csv += `ИТОГО ЗАПЧАСТИ:;;;${totalPartsCost}\n`;
+    csv += `ИТОГО ВСЕ РАСХОДЫ:;;;${totalAllExpenses}\n`;
+    csv += `\nПРИБЫЛЬ:;;;${profit}\n`;
+    csv += `ОПЛАЧЕНО:;;;${totalPaid}\n`;
+    csv += `КОЛ-ВО ЗАКАЗОВ:;;;${ordersResult.rows.length}\n`;
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="finance_report_${new Date().toISOString().split('T')[0]}.csv"`);
+    res.send(csv);
+  } catch (error) {
+    next(error);
+  }
+});
+
+function csvEscape(val: string): string {
+  if (!val) return '';
+  return '"' + val.replace(/"/g, '""') + '"';
+}
 
 // Вспомогательная функция для расчёта периода
 function toDateStr(d: Date): string {

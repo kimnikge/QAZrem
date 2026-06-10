@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Printer, RefreshCw, Save, PlusCircle, Trash2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { getOrder, getOrderStatuses, updateOrderStatus, createPayment, deletePayment, getSettings,
-  type OrderDetail, type AvailableStatus, type SettingsData } from '../api';
+import { getOrder, getOrderStatuses, updateOrderStatus, createPayment, deletePayment, refundPayment, getSettings, getOrderGroups, createOrderGroup,
+  type OrderDetail, type AvailableStatus, type SettingsData, type OrderGroup } from '../api';
 
 const statusLabels: Record<string, string> = {
   new: 'Новая', diagnosis: 'Диагностика', waiting_parts: 'Ожидание запчасти',
@@ -34,6 +34,8 @@ export function OrderDetailPage() {
   const [payPrepayment, setPayPrepayment] = useState(false);
   const [paySaving, setPaySaving] = useState(false);
   const [settings, setSettings] = useState<SettingsData | null>(null);
+  const [groups, setGroups] = useState<OrderGroup[]>([]);
+  const [editGroupId, setEditGroupId] = useState('');
 
   async function load() {
     if (!id) return;
@@ -49,7 +51,9 @@ export function OrderDetailPage() {
       setEditDiscount(String(Math.round(Number(o.discount))));
       setEditDiagnosis(o.diagnosis || '');
       setEditComment(o.internal_comment || '');
+      setEditGroupId(o.group_id ? String(o.group_id) : '');
       getSettings().then(setSettings).catch(() => {});
+      getOrderGroups().then(setGroups).catch(() => {});
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка загрузки');
     } finally {
@@ -67,6 +71,9 @@ export function OrderDetailPage() {
       if (Math.round(Number(editDiscount)) !== Math.round(Number(order?.discount))) body.discount = Math.round(Number(editDiscount));
       if (editDiagnosis !== (order?.diagnosis || '')) body.diagnosis = editDiagnosis;
       if (editComment !== (order?.internal_comment || '')) body.internal_comment = editComment;
+      if (editGroupId !== (order?.group_id ? String(order.group_id) : '')) {
+        body.group_id = editGroupId ? Number(editGroupId) : null;
+      }
 
       if (Object.keys(body).length > 0) {
         const token = localStorage.getItem('token');
@@ -117,6 +124,17 @@ export function OrderDetailPage() {
     }
   }
 
+  async function handleRefundPayment(paymentId: number) {
+    const reason = prompt('Причина возврата (необязательно):');
+    if (reason === null) return; // cancelled
+    try {
+      await refundPayment(paymentId, reason || undefined);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Ошибка возврата платежа');
+    }
+  }
+
   async function handleStatusChange(slug: string) {
     try {
       await updateOrderStatus(Math.round(Number(id)), slug);
@@ -161,6 +179,25 @@ export function OrderDetailPage() {
           <div className="detail-row"><span>IMEI</span><code>{order.imei}</code></div>
           <div className="detail-row"><span>Статус</span><strong>{statusLabels[order.status_slug]}</strong></div>
           <div className="detail-row"><span>Мастер</span><strong>{order.master_name || '—'}</strong></div>
+          <div className="detail-row">
+            <span>Группа</span>
+            {editing ? (
+              <select
+                value={editGroupId}
+                onChange={e => setEditGroupId(e.target.value)}
+                style={{ padding: '6px 10px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14, minWidth: 180 }}
+              >
+                <option value="">— Без группы —</option>
+                {groups.map(g => (
+                  <option key={g.id} value={g.id}>{g.name}</option>
+                ))}
+              </select>
+            ) : (
+              <strong style={{ color: order.group_name ? '#1a73e8' : '#9aa0a6' }}>
+                {order.group_name || '—'}
+              </strong>
+            )}
+          </div>
 
           {editing ? (
             <>
@@ -296,14 +333,42 @@ export function OrderDetailPage() {
               )}
 
               {order.payments.length > 0 && order.payments.map(p => (
-                <div key={p.id} className="detail-row">
-                  <span>{p.payment_method_name} {p.is_prepayment ? '(предоплата)' : '(доплата)'}</span>
+                <div key={p.id} className="detail-row" style={{ opacity: p.refunded_at ? 0.5 : 1 }}>
+                  <span>
+                    {p.payment_method_name} {p.is_prepayment ? '(предоплата)' : '(доплата)'}
+                    {p.refunded_at && (
+                      <span style={{ color: '#ef4444', fontSize: 11, marginLeft: 6 }}>
+                        ↩ Возврат {new Date(p.refunded_at).toLocaleDateString()}
+                        {p.refund_reason && ` — ${p.refund_reason}`}
+                      </span>
+                    )}
+                  </span>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <strong>{Math.round(Number(p.amount))} ₸</strong>
-                    {user?.role === 'admin' && (
+                    <strong style={{ textDecoration: p.refunded_at ? 'line-through' : 'none' }}>
+                      {Math.round(Number(p.amount))} ₸
+                    </strong>
+                    {user?.role === 'admin' && !p.refunded_at && (
+                      <>
+                        <button
+                          onClick={() => handleRefundPayment(p.id)}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#f59e0b', padding: 2, display: 'flex', fontSize: 13 }}
+                          title="Возврат платежа"
+                        >
+                          ↩
+                        </button>
+                        <button
+                          onClick={() => handleDeletePayment(p.id)}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: 2, display: 'flex' }}
+                          title="Удалить платёж"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </>
+                    )}
+                    {p.refunded_at && user?.role === 'admin' && (
                       <button
                         onClick={() => handleDeletePayment(p.id)}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: 2, display: 'flex' }}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9aa0a6', padding: 2, display: 'flex' }}
                         title="Удалить платёж"
                       >
                         <Trash2 size={14} />

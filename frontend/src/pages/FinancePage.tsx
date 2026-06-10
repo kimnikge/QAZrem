@@ -11,19 +11,41 @@ const apiUrl = import.meta.env.VITE_API_URL || '/api';
 
 type Tab = 'overview' | 'payouts';
 type ModalType = 'income' | 'paid' | 'debt' | 'expenses' | 'profit' | null;
+type PeriodMode = 'month' | 'custom';
 
-const periods = [
-  { key: 'week', label: 'Неделя' },
-  { key: 'month', label: 'Месяц' },
-  { key: 'quarter', label: 'Квартал' },
-  { key: 'year', label: 'Год' },
-];
+const months = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
+const shortMonths = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек'];
+const currentYear = new Date().getFullYear();
+const currentMonth = new Date().getMonth();
+const years = Array.from({ length: 5 }, (_, i) => currentYear - 2 + i);
+
+function formatPeriod(from: string, to: string): string {
+  const d1 = new Date(from);
+  const d2 = new Date(to);
+  const sameYear = d1.getFullYear() === d2.getFullYear();
+  if (sameYear) {
+    return `${shortMonths[d1.getMonth()]} — ${shortMonths[d2.getMonth()]} ${d1.getFullYear()}`;
+  }
+  return `${shortMonths[d1.getMonth()]} ${d1.getFullYear()} — ${shortMonths[d2.getMonth()]} ${d2.getFullYear()}`;
+}
+
+function getMonthRange(m: number, y: number): { from: string; to: string } {
+  const lastDay = new Date(y, m + 1, 0).getDate();
+  return {
+    from: `${y}-${String(m + 1).padStart(2, '0')}-01`,
+    to: `${y}-${String(m + 1).padStart(2, '0')}-${lastDay}`
+  };
+}
 
 export function FinancePage() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
   const [tab, setTab] = useState<Tab>('overview');
-  const [period, setPeriod] = useState('month');
+  const [periodMode, setPeriodMode] = useState<PeriodMode>('month');
+  const [selMonth, setSelMonth] = useState(currentMonth);
+  const [selYear, setSelYear] = useState(currentYear);
+  const [customFrom, setCustomFrom] = useState(`${currentYear}-01-01`);
+  const [customTo, setCustomTo] = useState(`${currentYear}-12-31`);
   const [masterFilter, setMasterFilter] = useState<number | ''>('');
 
   const [report, setReport] = useState<FinanceReport | null>(null);
@@ -39,17 +61,20 @@ export function FinancePage() {
 
   useEffect(() => {
     setLoading(true);
-    const now = new Date();
-    const from = `${now.getFullYear()}-01-01`;
-    const to = `${now.getFullYear()}-12-31`;
+
+    const { from, to } = periodMode === 'custom'
+      ? { from: customFrom, to: customTo }
+      : getMonthRange(selMonth, selYear);
 
     if (tab === 'overview') {
       getFinanceReport(from, to).then(setReport).catch(console.error).finally(() => setLoading(false));
     } else {
-      getMasterPayouts(period, masterFilter || undefined)
-        .then(setPayouts).catch(console.error).finally(() => setLoading(false));
+      getMasterPayouts(
+        `custom_${from}_${to}`,
+        masterFilter || undefined
+      ).then(setPayouts).catch(console.error).finally(() => setLoading(false));
     }
-  }, [tab, period, masterFilter]);
+  }, [tab, periodMode, selMonth, selYear, customFrom, customTo, masterFilter]);
 
   return (
     <div className="ro-dashboard">
@@ -81,7 +106,47 @@ export function FinancePage() {
 
       {tab === 'overview' && report && (
         <>
-          <div className="finance-grid" style={{ marginTop: 16 }}>
+          <div style={{ display: 'flex', gap: 10, marginTop: 12, marginBottom: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 13, color: 'var(--text-muted)', fontWeight: 500 }}>Период:</span>
+            <button
+              onClick={() => setPeriodMode('month')}
+              style={{
+                padding: '6px 14px', borderRadius: 6, border: '1px solid var(--border)', cursor: 'pointer', fontSize: 13,
+                background: periodMode === 'month' ? 'var(--primary)' : 'var(--card-bg)',
+                color: periodMode === 'month' ? '#fff' : 'var(--text-muted)',
+              }}
+            >За месяц</button>
+            <button
+              onClick={() => setPeriodMode('custom')}
+              style={{
+                padding: '6px 14px', borderRadius: 6, border: '1px solid var(--border)', cursor: 'pointer', fontSize: 13,
+                background: periodMode === 'custom' ? 'var(--primary)' : 'var(--card-bg)',
+                color: periodMode === 'custom' ? '#fff' : 'var(--text-muted)',
+              }}
+            >Произвольный</button>
+            {periodMode === 'month' ? (
+              <>
+                <select value={selMonth} onChange={e => setSelMonth(Number(e.target.value))}
+                  style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)', fontSize: 13, background: 'var(--card-bg)', color: 'var(--text)' }}>
+                  {months.map((m, i) => <option key={i} value={i}>{m}</option>)}
+                </select>
+                <select value={selYear} onChange={e => setSelYear(Number(e.target.value))}
+                  style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)', fontSize: 13, background: 'var(--card-bg)', color: 'var(--text)' }}>
+                  {years.map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+              </>
+            ) : (
+              <>
+                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>с</span>
+                <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
+                  style={{ padding: '5px 8px', borderRadius: 6, border: '1px solid var(--border)', fontSize: 13, background: 'var(--card-bg)', color: 'var(--text)' }} />
+                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>по</span>
+                <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
+                  style={{ padding: '5px 8px', borderRadius: 6, border: '1px solid var(--border)', fontSize: 13, background: 'var(--card-bg)', color: 'var(--text)' }} />
+              </>
+            )}
+          </div>
+          <div className="finance-grid" style={{ marginTop: 8 }}>
             <div className="finance-card" style={{ cursor: 'pointer' }} onClick={() => setModal('income')}>
               <span className="finance-label">Заработано</span>
               <span className="finance-value positive">{report.income} ₸</span>
@@ -113,7 +178,7 @@ export function FinancePage() {
             <h3>Детали</h3>
             <div className="detail-row"><span>Прямые расходы</span><strong>{report.expenses.direct} ₸</strong></div>
             <div className="detail-row"><span>Себестоимость запчастей</span><strong>{report.expenses.parts_cost} ₸</strong></div>
-            <div className="detail-row"><span>Период</span><strong>Январь — Декабрь {new Date().getFullYear()}</strong></div>
+            <div className="detail-row"><span>Период</span><strong>{formatPeriod(report.period.from, report.period.to)}</strong></div>
           </div>
         </>
       )}
@@ -121,25 +186,45 @@ export function FinancePage() {
       {tab === 'payouts' && (
         <>
           {/* Period selector + master filter (admin only) */}
-          <div style={{ display: 'flex', gap: 12, marginTop: 16, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 13, color: '#5f6368', fontWeight: 500 }}>Период:</span>
-            {periods.map(p => (
-              <button
-                key={p.key}
-                className={`btn-status${period === p.key ? '' : ''}`}
-                style={{
-                  ...(period === p.key ? { background: '#1a73e8', color: '#fff', borderColor: '#1a73e8' } : {}),
-                  padding: '6px 14px',
-                  borderRadius: 6,
-                  border: '1px solid var(--border)',
-                  cursor: 'pointer',
-                  fontSize: 13
-                }}
-                onClick={() => setPeriod(p.key)}
-              >
-                {p.label}
-              </button>
-            ))}
+          <div style={{ display: 'flex', gap: 10, marginTop: 16, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 13, color: 'var(--text-muted)', fontWeight: 500 }}>Период:</span>
+            <button
+              onClick={() => setPeriodMode('month')}
+              style={{
+                padding: '6px 14px', borderRadius: 6, border: '1px solid var(--border)', cursor: 'pointer', fontSize: 13,
+                background: periodMode === 'month' ? 'var(--primary)' : 'var(--card-bg)',
+                color: periodMode === 'month' ? '#fff' : 'var(--text-muted)',
+              }}
+            >За месяц</button>
+            <button
+              onClick={() => setPeriodMode('custom')}
+              style={{
+                padding: '6px 14px', borderRadius: 6, border: '1px solid var(--border)', cursor: 'pointer', fontSize: 13,
+                background: periodMode === 'custom' ? 'var(--primary)' : 'var(--card-bg)',
+                color: periodMode === 'custom' ? '#fff' : 'var(--text-muted)',
+              }}
+            >Произвольный</button>
+            {periodMode === 'month' ? (
+              <>
+                <select value={selMonth} onChange={e => setSelMonth(Number(e.target.value))}
+                  style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)', fontSize: 13, background: 'var(--card-bg)', color: 'var(--text)' }}>
+                  {months.map((m, i) => <option key={i} value={i}>{m}</option>)}
+                </select>
+                <select value={selYear} onChange={e => setSelYear(Number(e.target.value))}
+                  style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)', fontSize: 13, background: 'var(--card-bg)', color: 'var(--text)' }}>
+                  {years.map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+              </>
+            ) : (
+              <>
+                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>с</span>
+                <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
+                  style={{ padding: '5px 8px', borderRadius: 6, border: '1px solid var(--border)', fontSize: 13, background: 'var(--card-bg)', color: 'var(--text)' }} />
+                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>по</span>
+                <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
+                  style={{ padding: '5px 8px', borderRadius: 6, border: '1px solid var(--border)', fontSize: 13, background: 'var(--card-bg)', color: 'var(--text)' }} />
+              </>
+            )}
             {isAdmin && masters.length > 0 && (
               <>
                 <span style={{ fontSize: 13, color: '#5f6368', fontWeight: 500, marginLeft: 8 }}>Мастер:</span>

@@ -1,4 +1,5 @@
-import { BarChart3, ClipboardList, LogOut, Package, Search, Settings, TrendingUp } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { BarChart3, ClipboardList, LogOut, Package, Search, Settings, TrendingUp, Moon, Sun } from 'lucide-react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
@@ -14,6 +15,15 @@ const navItems = [
 export function Layout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const [dark, setDark] = useState(() => {
+    const saved = localStorage.getItem('qazrem_theme');
+    return saved === 'dark';
+  });
+
+  useEffect(() => {
+    document.body.classList.toggle('dark', dark);
+    localStorage.setItem('qazrem_theme', dark ? 'dark' : 'light');
+  }, [dark]);
 
   const handleLogout = () => {
     logout();
@@ -35,11 +45,14 @@ export function Layout() {
             </NavLink>
           ))}
         </nav>
-        <div className="sidebar-footer">
+        <div className="sidebar-footer" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <span className="nav-link" onClick={handleLogout}>
             <LogOut size={20} />
             <span>Выйти</span>
           </span>
+          <button className="theme-toggle" onClick={() => setDark(!dark)} title={dark ? 'Светлая тема' : 'Тёмная тема'}>
+            {dark ? <Sun size={18} /> : <Moon size={18} />}
+          </button>
         </div>
       </aside>
       <main className="main-content">

@@ -142,7 +142,6 @@ export function PartsPage() {
             {parts.map(p => (
               <tr
                 key={p.id}
-                className={p.quantity <= p.min_quantity ? 'row-warning' : ''}
                 onClick={() => isAdmin && openEdit(p)}
                 style={{ cursor: isAdmin ? 'pointer' : undefined }}
               >

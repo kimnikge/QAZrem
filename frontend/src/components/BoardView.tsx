@@ -4,7 +4,7 @@ import { BoardColumn } from './BoardColumn';
 import { updateOrderStatus } from '../api';
 import type { Order } from '../api';
 
-const BOARD_STATUSES = ['new', 'diagnosis', 'waiting_parts', 'repair', 'ready'];
+const BOARD_STATUSES = ['new', 'diagnosis', 'waiting_parts', 'repair', 'ready', 'completed', 'cancelled'];
 
 interface Props {
   orders: Order[];

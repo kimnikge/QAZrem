@@ -183,7 +183,7 @@ export function DashboardPage() {
       <div className="ro-stats">
         {statCards.map(c => (
           <div key={c.label} className="ro-stat-card" style={{ borderLeftColor: c.color }}>
-            <span className="ro-stat-value">{c.currency ? `${c.value} ₸` : c.value}</span>
+            <span className="ro-stat-value">{c.value}</span>
             <span className="ro-stat-label">{c.label}</span>
           </div>
         ))}

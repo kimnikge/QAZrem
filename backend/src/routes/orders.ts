@@ -347,9 +347,9 @@ ordersRouter.get('/:id/statuses', async (req, res, next) => {
     if (order.rows.length === 0) throw new NotFoundError('Заказ');
 
     const currentSlug = order.rows[0].slug;
-    // Возвращаем все статусы, кроме текущего и финальных (completed, cancelled)
+    // Возвращаем все статусы, кроме текущего
     const result = await pool.query(
-      `SELECT id, name, slug FROM order_statuses WHERE slug != $1 AND is_final = FALSE`,
+      `SELECT id, name, slug FROM order_statuses WHERE slug != $1 ORDER BY id`,
       [currentSlug]
     );
     res.json({ current: currentSlug, available: result.rows });

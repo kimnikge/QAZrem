@@ -235,6 +235,15 @@ body.dark .ro-table td {
 body.dark .ro-row:hover { background: rgba(139,92,246,0.04); }
 body.dark .ro-row.overdue { background: rgba(248,113,113,0.06); }
 body.dark .ro-row.overdue:hover { background: rgba(248,113,113,0.1); }
+body.dark .ro-meta-line { color: #4b5563; }
+body.dark .ro-client-phone { color: #6b7280; }
+body.dark .ro-device-imei { color: #6b7280; }
+body.dark .ro-device-imei:hover { color: #60a5fa; }
+body.dark .ro-imei-copied { color: #4ade80; }
+body.dark .ro-master-name { color: #60a5fa; }
+body.dark .ro-group-tag { background: rgba(59,130,246,0.15); color: #60a5fa; }
+body.dark .ro-overdue-dot { background: #ef4444; color: #fff; }
+body.dark .ro-cell-date.overdue { color: #f87171; }
 
 /* Dark: sticky columns */
 body.dark .ro-table th.sticky-left,
@@ -769,7 +778,56 @@ body {
 .ro-cell-client span { font-size: 12px; color: var(--text-muted); }
 .ro-cell-desc { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); font-size: 13px; }
 .ro-cell-date { color: var(--text-muted); font-size: 13px; white-space: nowrap; }
+.ro-cell-date.overdue { color: #ef4444; font-weight: 600; }
 .ro-cell-price { font-weight: 600; text-align: right; white-space: nowrap; }
+
+/* ROAPP-style: meta line under status */
+.ro-status-wrap { display: flex; flex-direction: column; gap: 3px; }
+.ro-badge.clickable { cursor: pointer; }
+.ro-badge-arrow { margin-left: 3px; font-size: 9px; opacity: 0.6; }
+.ro-meta-line { font-size: 11px; color: #9ca3af; white-space: nowrap; }
+
+/* ROAPP-style: overdue dot */
+.ro-overdue-dot {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: #ef4444; color: #fff; font-size: 10px; font-weight: 700;
+  margin-left: 4px; vertical-align: middle;
+}
+
+/* ROAPP-style: client cell */
+.ro-client-name { font-size: 13px; font-weight: 500; color: var(--text); }
+.ro-client-phone { font-size: 11px; color: #9ca3af; }
+
+/* ROAPP-style: device cell */
+.ro-cell-device { line-height: 1.4; }
+.ro-device-name { font-size: 13px; color: var(--text); }
+.ro-device-imei { font-size: 11px; color: #9ca3af; font-family: 'SF Mono', 'Fira Code', monospace; cursor: pointer; user-select: all; position: relative; display: inline-flex; align-items: center; gap: 4px; }
+.ro-device-imei:hover { color: #2563eb; }
+.ro-imei-copy-icon { font-size: 10px; opacity: 0; transition: opacity 0.15s; }
+.ro-device-imei:hover .ro-imei-copy-icon { opacity: 0.5; }
+.ro-imei-copied { font-size: 10px; color: #16a34a; font-family: inherit; font-weight: 500; }
+
+/* ROAPP-style: master / group */
+.ro-master-name { color: #2563eb; font-size: 13px; font-weight: 500; }
+.ro-master-empty { color: #9ca3af; font-size: 13px; }
+.ro-group-tag {
+  display: inline-block; padding: 1px 8px; border-radius: 10px;
+  background: #e8f0fe; color: #1967d2; font-size: 11px; font-weight: 500;
+}
+.ro-group-empty { color: #9ca3af; font-size: 12px; }
+
+/* Priority compact: ! and !! */
+.ro-priority.urgent {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: #fef3c7; color: #d97706; font-size: 12px; font-weight: 700;
+}
+.ro-priority.critical {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: #fee2e2; color: #dc2626; font-size: 11px; font-weight: 700;
+}
 
 /* Print mode — hide sidebar */
 body.print-mode .sidebar { display: none; }

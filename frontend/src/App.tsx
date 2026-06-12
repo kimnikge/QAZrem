@@ -8,6 +8,7 @@ import { DashboardPage } from './pages/DashboardPage';
 import { CreateOrderPage } from './pages/CreateOrderPage';
 import { OrderDetailPage } from './pages/OrderDetailPage';
 import { PartsPage } from './pages/PartsPage';
+import { ServicesPage } from './pages/ServicesPage';
 import { PrintOrderPage } from './pages/PrintOrderPage';
 import { FinancePage } from './pages/FinancePage';
 
@@ -30,6 +31,7 @@ function AppRoutes() {
         <Route path="/orders/:id" element={<OrderDetailPage />} />
         <Route path="/print-order/:id" element={<PrintOrderPage />} />
         <Route path="/parts" element={<PartsPage />} />
+        <Route path="/services" element={<ServicesPage />} />
         <Route path="/finance" element={<FinancePage />} />
         <Route path="/analytics" element={<AnalyticsPage />} />
         <Route path="/settings" element={<SettingsPage />} />

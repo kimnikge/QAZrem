@@ -1,8 +1,9 @@
+import { useState } from 'react';
 import { type Order } from '../api';
 
 const statusLabels: Record<string, string> = {
-  new: 'Новая', diagnosis: 'Диагностика', waiting_parts: 'Ожидание запчасти',
-  repair: 'Ремонт', ready: 'Готов к выдаче', completed: 'Выдан', cancelled: 'Отказ'
+  new: 'Новый', diagnosis: 'Диагностика', waiting_parts: 'Ожидание',
+  repair: 'Ремонт', ready: 'Готов', completed: 'Выдан', cancelled: 'Отказ'
 };
 
 const statusColors: Record<string, string> = {
@@ -20,7 +21,7 @@ const ALL_STATUSES = ['new', 'diagnosis', 'waiting_parts', 'repair', 'ready', 'c
 export type ColumnKey = 'id' | 'status' | 'priority' | 'deadline' | 'client' | 'device' | 'issue' | 'master' | 'group' | 'cost';
 
 export const defaultColumns: { key: ColumnKey; label: string }[] = [
-  { key: 'id', label: '№' }, { key: 'status', label: 'Статус' }, { key: 'priority', label: 'Приоритет' },
+  { key: 'id', label: '№' }, { key: 'status', label: 'Статус' }, { key: 'priority', label: '⚡' },
   { key: 'deadline', label: 'Срок' }, { key: 'client', label: 'Клиент' }, { key: 'device', label: 'Устройство' },
   { key: 'issue', label: 'Проблема' }, { key: 'master', label: 'Мастер' }, { key: 'group', label: 'Группа' },
   { key: 'cost', label: 'Сумма' },
@@ -55,22 +56,36 @@ interface Props {
 export function DashboardTable({ orders, compact, colOrder, dragCol, statusDropdownId,
   onColOrderChange, onDragColChange, onStatusDropdownChange, onStatusChange, onRowClick }: Props) {
 
+  const [copiedImei, setCopiedImei] = useState<number | null>(null);
+
+  function copyImei(e: React.MouseEvent, orderId: number, imei: string) {
+    e.stopPropagation();
+    navigator.clipboard.writeText(imei).then(() => {
+      setCopiedImei(orderId);
+      setTimeout(() => setCopiedImei(null), 1500);
+    }).catch(() => {});
+  }
+
   function renderCell(key: ColumnKey, o: Order) {
     const stickyLeft = key === 'id' ? ' sticky-left' : '';
     const stickyRight = key === 'cost' ? ' sticky-right' : '';
     const sticky = stickyLeft || stickyRight;
     switch (key) {
       case 'id':
-        return <td key={key} className={`ro-cell-id${sticky}`}>#{o.id}{o.is_overdue && <span style={{ color: '#ef4444', marginLeft: 4 }}>⚠</span>}</td>;
+        return <td key={key} className={`ro-cell-id${sticky}`} style={{ fontWeight: 600 }}>
+          №{o.id}{o.is_overdue && <span className="ro-overdue-dot" title="Просрочен">!</span>}
+        </td>;
       case 'status': {
         const available = ALL_STATUSES.filter(s => s !== o.status_slug);
         const isOpen = statusDropdownId === o.id;
         return <td key={key} style={{ position: 'relative' }}>
-          <span className={`ro-badge ${statusColors[o.status_slug]}`}
-            style={{ cursor: available.length > 0 ? 'pointer' : 'default' }}
-            onClick={(e) => { e.stopPropagation(); onStatusDropdownChange(isOpen ? null : o.id); }}>
-            {statusLabels[o.status_slug]}{available.length > 0 && <span style={{ marginLeft: 4, fontSize: 10 }}>▾</span>}
-          </span>
+          <div className="ro-status-wrap">
+            <span className={`ro-badge ${statusColors[o.status_slug]}${available.length > 0 ? ' clickable' : ''}`}
+              onClick={(e) => { e.stopPropagation(); if (available.length > 0) onStatusDropdownChange(isOpen ? null : o.id); }}>
+              {statusLabels[o.status_slug]}{available.length > 0 && <span className="ro-badge-arrow">▾</span>}
+            </span>
+            <span className="ro-meta-line">{o.created_by_name || ''}{o.created_by_name && o.created_at ? ' · ' : ''}{o.created_at ? new Date(o.created_at).toLocaleDateString() : ''}</span>
+          </div>
           {isOpen && available.length > 0 && (
             <div className="status-dropdown" onClick={e => e.stopPropagation()}>
               {available.map(slug => (
@@ -81,25 +96,44 @@ export function DashboardTable({ orders, compact, colOrder, dragCol, statusDropd
                 </button>))}
             </div>
           )}
-          <div style={{ fontSize: 11, color: '#9aa0a6', marginTop: 2 }}>{o.created_by_name || ''} · {new Date(o.created_at).toLocaleDateString()}</div>
         </td>;
       }
       case 'priority':
-        return <td key={key}>{o.priority !== 'normal' && <span className={`ro-priority ${o.priority}`}>{o.priority === 'urgent' ? 'Срочно' : 'Критично'}</span>}</td>;
+        return <td key={key} style={{ textAlign: 'center' }}>
+          {o.priority === 'urgent' && <span className="ro-priority urgent">!</span>}
+          {o.priority === 'critical' && <span className="ro-priority critical">!!</span>}
+        </td>;
       case 'deadline':
-        return <td key={key} className="ro-cell-date">{o.deadline ? new Date(o.deadline).toLocaleDateString() : '-'}</td>;
+        return <td key={key} className={`ro-cell-date${o.is_overdue ? ' overdue' : ''}`}>
+          {o.deadline ? new Date(o.deadline).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' }) : '—'}
+        </td>;
       case 'client':
-        return <td key={key} className="ro-cell-client"><strong>{o.client_name}</strong><span>{o.client_phone}</span></td>;
+        return <td key={key} className="ro-cell-client">
+          <div className="ro-client-name">{o.client_name}</div>
+          <div className="ro-client-phone">{o.client_phone}</div>
+        </td>;
       case 'device':
-        return <td key={key}><div>{o.brand} {o.model}</div><div style={{ fontSize: 11, color: '#9aa0a6', fontFamily: 'monospace' }}>{o.imei}</div></td>;
+        return <td key={key} className="ro-cell-device">
+          <div className="ro-device-name">{o.brand} {o.model}</div>
+          <div className="ro-device-imei" onClick={(e) => copyImei(e, o.id, o.imei)} title="Копировать IMEI">
+            {o.imei}
+            {copiedImei === o.id ? <span className="ro-imei-copied">Скопировано</span> : <span className="ro-imei-copy-icon">📋</span>}
+          </div>
+        </td>;
       case 'issue':
         return <td key={key} className="ro-cell-desc">{o.issue_description}</td>;
       case 'master':
-        return <td key={key} style={{ fontSize: 13, color: o.master_name ? '#1a73e8' : '#9aa0a6' }}>{o.master_name || '—'}</td>;
+        return <td key={key}>
+          <span className={o.master_name ? 'ro-master-name' : 'ro-master-empty'}>{o.master_name || '—'}</span>
+        </td>;
       case 'group':
-        return <td key={key} style={{ fontSize: 12, color: o.group_name ? '#1a73e8' : '#9aa0a6' }}>{o.group_name || '—'}</td>;
+        return <td key={key}>
+          <span className={o.group_name ? 'ro-group-tag' : 'ro-group-empty'}>{o.group_name || '—'}</span>
+        </td>;
       case 'cost':
-        return <td key={key} className={`ro-cell-price${sticky}`}>{Math.round(Number(o.cost))} ₸</td>;
+        return <td key={key} className={`ro-cell-price${sticky}`} style={{ fontWeight: 600 }}>
+          {Math.round(Number(o.cost)) > 0 ? `${Math.round(Number(o.cost))} ₸` : '0 ₸'}
+        </td>;
       default:
         return <td key={key}></td>;
     }

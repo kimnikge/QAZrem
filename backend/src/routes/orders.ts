@@ -347,10 +347,10 @@ ordersRouter.get('/:id/statuses', async (req, res, next) => {
     if (order.rows.length === 0) throw new NotFoundError('Заказ');
 
     const currentSlug = order.rows[0].slug;
-    const available = STATUS_TRANSITIONS[currentSlug] || [];
+    // Возвращаем все статусы, кроме текущего и финальных (completed, cancelled)
     const result = await pool.query(
-      `SELECT id, name, slug FROM order_statuses WHERE slug = ANY($1)`,
-      [available]
+      `SELECT id, name, slug FROM order_statuses WHERE slug != $1 AND is_final = FALSE`,
+      [currentSlug]
     );
     res.json({ current: currentSlug, available: result.rows });
   } catch (error) {
@@ -732,14 +732,6 @@ ordersRouter.patch('/:id/status', requireRole('admin', 'master'), async (req, re
 
     if (is_final) {
       throw new BadRequestError('Нельзя изменить статус финального заказа');
-    }
-
-    // Проверяем допустимость перехода
-    const allowed = STATUS_TRANSITIONS[current_slug];
-    if (!allowed || !allowed.includes(input.status_slug)) {
-      throw new BadRequestError(
-        `Недопустимый переход статуса: "${current_slug}" → "${input.status_slug}"`
-      );
     }
 
     // Получаем ID нового статуса

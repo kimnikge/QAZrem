@@ -5,13 +5,6 @@ import { updateOrderStatus } from '../api';
 import type { Order } from '../api';
 
 const BOARD_STATUSES = ['new', 'diagnosis', 'waiting_parts', 'repair', 'ready'];
-const STATUS_TRANSITIONS: Record<string, string[]> = {
-  new: ['diagnosis'],
-  diagnosis: ['waiting_parts', 'repair', 'ready'],
-  waiting_parts: ['repair'],
-  repair: ['ready'],
-  ready: [],
-};
 
 interface Props {
   orders: Order[];
@@ -41,10 +34,6 @@ export function BoardView({ orders, onOrderUpdated, onCardOpen }: Props) {
     const order = orders.find(o => o.id === Number(orderId));
     if (!order) return;
     if (order.status_slug === newStatus) return;
-
-    // Проверяем допустимость перехода
-    const allowed = STATUS_TRANSITIONS[order.status_slug] || [];
-    if (!allowed.includes(newStatus)) return;
 
     try {
       await updateOrderStatus(Number(orderId), newStatus);

@@ -31,15 +31,12 @@ const statusColors: Record<string, string> = {
   repair: 's-repair', ready: 's-ready', completed: 's-completed', cancelled: 's-cancelled'
 };
 
-const STATUS_TRANSITIONS: Record<string, string[]> = {
-  new: ['diagnosis', 'cancelled'],
-  diagnosis: ['waiting_parts', 'repair', 'ready', 'cancelled'],
-  waiting_parts: ['repair', 'cancelled'],
-  repair: ['ready', 'cancelled'],
-  ready: ['completed', 'cancelled'],
-  completed: [],
-  cancelled: []
+const statusHexColors: Record<string, string> = {
+  new: '#3b82f6', diagnosis: '#f59e0b', waiting_parts: '#8b5cf6',
+  repair: '#f97316', ready: '#22c55e', completed: '#6b7280', cancelled: '#ef4444'
 };
+
+const ALL_STATUSES = ['new', 'diagnosis', 'waiting_parts', 'repair', 'ready', 'completed', 'cancelled'];
 
 type ColumnKey = 'id' | 'status' | 'priority' | 'deadline' | 'client' | 'device' | 'issue' | 'master' | 'group' | 'cost';
 
@@ -194,7 +191,7 @@ export function DashboardPage() {
       case 'id':
         return <td key={key} className={`ro-cell-id${sticky}`}>#{o.id}{o.is_overdue && <span style={{ color: '#ef4444', marginLeft: 4 }}>⚠</span>}</td>;
       case 'status': {
-        const available = STATUS_TRANSITIONS[o.status_slug] || [];
+        const available = ALL_STATUSES.filter(s => s !== o.status_slug); // все кроме текущего
         const isOpen = statusDropdownId === o.id;
         return <td key={key} style={{ position: 'relative' }}>
           <span
@@ -214,8 +211,10 @@ export function DashboardPage() {
                 <button
                   key={slug}
                   className="status-dropdown-item"
+                  style={{ borderLeft: `3px solid ${statusHexColors[slug] || '#6b7280'}` }}
                   onClick={() => handleQuickStatusChange(o.id, slug)}
                 >
+                  <span className="status-dropdown-dot" style={{ background: statusHexColors[slug] || '#6b7280' }} />
                   {statusLabels[slug]}
                 </button>
               ))}

@@ -5,10 +5,11 @@ import {
   createPaymentMethod, deletePaymentMethod,
   createExpenseCategory, deleteExpenseCategory,
   createUser, updateUser, deleteUser,
-  type SettingsData, type UserCreateInput, type UserUpdateInput
+  getOrderGroups, createOrderGroup, updateOrderGroup, deleteOrderGroup,
+  type SettingsData, type UserCreateInput, type UserUpdateInput, type OrderGroup
 } from '../api';
 
-type Tab = 'users' | 'statuses' | 'payments' | 'expenses';
+type Tab = 'users' | 'statuses' | 'payments' | 'expenses' | 'groups';
 
 const roleLabels: Record<string, string> = {
   admin: 'Админ',
@@ -148,6 +149,12 @@ export function SettingsPage() {
   // New expense category
   const [newExpense, setNewExpense] = useState('');
 
+  // Groups
+  const [groups, setGroups] = useState<OrderGroup[]>([]);
+  const [newGroup, setNewGroup] = useState('');
+  const [editGroupId, setEditGroupId] = useState<number | null>(null);
+  const [editGroupName, setEditGroupName] = useState('');
+
   // User form modal
   const [userModal, setUserModal] = useState<{ mode: 'create' } | { mode: 'edit'; user: SettingsData['users'][0] } | null>(null);
   const [deletingUserId, setDeletingUserId] = useState<number | null>(null);
@@ -165,7 +172,16 @@ export function SettingsPage() {
     }
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); loadGroups(); }, []);
+
+  async function loadGroups() {
+    try {
+      const g = await getOrderGroups();
+      setGroups(g);
+    } catch (err) {
+      console.error(err);
+    }
+  }
 
   async function handleAddPayment() {
     if (!newPayment.trim()) return;
@@ -209,6 +225,39 @@ export function SettingsPage() {
     }
   }
 
+  async function handleAddGroup() {
+    if (!newGroup.trim()) return;
+    try {
+      await createOrderGroup(newGroup.trim());
+      setNewGroup('');
+      await loadGroups();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Ошибка');
+    }
+  }
+
+  async function handleRenameGroup() {
+    if (!editGroupId || !editGroupName.trim()) return;
+    try {
+      await updateOrderGroup(editGroupId, editGroupName.trim());
+      setEditGroupId(null);
+      setEditGroupName('');
+      await loadGroups();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Ошибка');
+    }
+  }
+
+  async function handleDeleteGroup(id: number, name: string) {
+    if (!confirm(`Удалить группу "${name}"? Заказы в ней останутся без группы.`)) return;
+    try {
+      await deleteOrderGroup(id);
+      await loadGroups();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Ошибка');
+    }
+  }
+
   async function handleDeleteUser(id: number, name: string) {
     if (!confirm(`Удалить пользователя "${name}"?`)) return;
     setDeletingUserId(id);
@@ -225,6 +274,7 @@ export function SettingsPage() {
   const tabs: { key: Tab; label: string }[] = [
     { key: 'users', label: 'Пользователи' },
     { key: 'statuses', label: 'Статусы заказов' },
+    { key: 'groups', label: 'Группы заказов' },
     { key: 'payments', label: 'Способы оплаты' },
     { key: 'expenses', label: 'Категории расходов' },
   ];
@@ -407,6 +457,74 @@ export function SettingsPage() {
                         </td>
                       </tr>
                     ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* ============================================================ */}
+          {/* Вкладка: Группы заказов */}
+          {/* ============================================================ */}
+          {tab === 'groups' && (
+            <div>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+                <input
+                  className="filter-select"
+                  placeholder="Название новой группы"
+                  value={newGroup}
+                  onChange={e => setNewGroup(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleAddGroup()}
+                  style={{ flex: 1 }}
+                />
+                <button className="ro-btn-primary" onClick={handleAddGroup}>Добавить</button>
+              </div>
+              <div className="ro-table-wrap">
+                <table className="ro-table">
+                  <thead><tr><th>ID</th><th>Название</th><th>Заказов</th><th style={{ width: 120 }}></th></tr></thead>
+                  <tbody>
+                    {groups.map(g => (
+                      <tr key={g.id}>
+                        <td>{g.id}</td>
+                        <td>
+                          {editGroupId === g.id ? (
+                            <input
+                              value={editGroupName}
+                              onChange={e => setEditGroupName(e.target.value)}
+                              onKeyDown={e => { if (e.key === 'Enter') handleRenameGroup(); if (e.key === 'Escape') setEditGroupId(null); }}
+                              onBlur={handleRenameGroup}
+                              autoFocus
+                              style={{ padding: '4px 8px', border: '1px solid var(--primary)', borderRadius: 4, fontSize: 13, width: '100%' }}
+                            />
+                          ) : (
+                            <strong>{g.name}</strong>
+                          )}
+                        </td>
+                        <td style={{ textAlign: 'center' }}>{g.order_count}</td>
+                        <td>
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <button
+                              className="btn-status"
+                              onClick={() => { setEditGroupId(g.id); setEditGroupName(g.name); }}
+                              title="Переименовать"
+                            >
+                              ✏️
+                            </button>
+                            <button
+                              className="btn-status"
+                              onClick={() => handleDeleteGroup(g.id, g.name)}
+                              style={{ color: '#ef4444' }}
+                              title="Удалить"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {groups.length === 0 && (
+                      <tr><td colSpan={4} style={{ textAlign: 'center', color: '#9ca3af', padding: 24 }}>Нет групп</td></tr>
+                    )}
                   </tbody>
                 </table>
               </div>

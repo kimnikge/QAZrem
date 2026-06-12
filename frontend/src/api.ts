@@ -364,6 +364,12 @@ export function createOrderGroup(name: string) {
   });
 }
 
+export function updateOrderGroup(id: number, name: string) {
+  return request<OrderGroup>(`/order-groups/${id}`, {
+    method: 'PATCH', body: JSON.stringify({ name })
+  });
+}
+
 export function deleteOrderGroup(id: number) {
   return request<{ message: string }>(`/order-groups/${id}`, { method: 'DELETE' });
 }

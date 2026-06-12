@@ -41,6 +41,24 @@ orderGroupsRouter.post('/', async (req, res, next) => {
   }
 });
 
+// PATCH /order-groups/:id — переименовать группу
+orderGroupsRouter.patch('/:id', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { name } = createGroupSchema.parse(req.body);
+    const result = await pool.query(
+      'UPDATE order_groups SET name = $1 WHERE id = $2 RETURNING *',
+      [name, id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Группа не найдена' });
+    }
+    res.json(result.rows[0]);
+  } catch (error) {
+    next(error);
+  }
+});
+
 // DELETE /order-groups/:id
 orderGroupsRouter.delete('/:id', async (req, res, next) => {
   try {

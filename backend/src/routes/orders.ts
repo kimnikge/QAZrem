@@ -835,8 +835,43 @@ ordersRouter.post('/:id/parts', requireRole('admin', 'master'), async (req, res,
     );
 
     await dbClient.query('COMMIT');
-
     res.json({ message: 'Запчасть списана', part_name: name, quantity: input.quantity });
+  } catch (error) {
+    await dbClient.query('ROLLBACK');
+    next(error);
+  } finally {
+    dbClient.release();
+  }
+});
+
+// ============================================================
+// DELETE /orders/:id/parts/:partId — возврат запчасти на склад
+// ============================================================
+ordersRouter.delete('/:id/parts/:partId', requireRole('admin'), async (req, res, next) => {
+  const dbClient = await pool.connect();
+  try {
+    const orderId = idParamSchema.parse(req.params.id);
+    const partId = idParamSchema.parse(req.params.partId);
+
+    await dbClient.query('BEGIN');
+
+    const row = await dbClient.query(
+      'SELECT op.id, op.quantity_used, p.name FROM order_parts op JOIN parts p ON p.id = op.part_id WHERE op.order_id = $1 AND op.part_id = $2',
+      [orderId, partId]
+    );
+    if (row.rows.length === 0) throw new NotFoundError('Запчасть в заказе');
+
+    const { quantity_used, name } = row.rows[0];
+
+    // Возвращаем на склад
+    await dbClient.query('UPDATE parts SET quantity = quantity + $1 WHERE id = $2', [quantity_used, partId]);
+    // Удаляем из order_parts
+    await dbClient.query('DELETE FROM order_parts WHERE order_id = $1 AND part_id = $2', [orderId, partId]);
+    // Запись в part_movements
+    await dbClient.query(`INSERT INTO part_movements (part_id, type, quantity, order_id) VALUES ($1, 'incoming', $2, $3)`, [partId, quantity_used, orderId]);
+
+    await dbClient.query('COMMIT');
+    res.json({ message: `Запчасть "${name}" возвращена на склад`, quantity: quantity_used });
   } catch (error) {
     await dbClient.query('ROLLBACK');
     next(error);

@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { X, Printer, Edit3, Save, Loader2 } from 'lucide-react';
 import { type Order } from '../api';
 import { useOrderModal } from '../hooks/useOrderModal';
+import { OrderPartsSection } from './OrderPartsSection';
 
 const statusLabels: Record<string, string> = {
   new: 'Новая', diagnosis: 'Диагностика', waiting_parts: 'Ожидание запчасти',
@@ -100,10 +101,7 @@ export function OrderModal({ orderId, preload, onClose, onOrderUpdated }: Props)
               <div className="modal-section"><div className="modal-field"><span className="modal-label">Комментарий</span><span className="modal-value" style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>{order.internal_comment}</span></div></div>
             ) : null}
 
-            {order.parts.length > 0 && (
-              <div className="modal-section"><div className="modal-subtitle">Запчасти</div>
-                {order.parts.map(p => <div key={p.id} className="modal-field"><span className="modal-label">{p.part_name} ×{p.quantity_used}</span><span className="modal-value">{Math.round(Number(p.selling_price_at_moment))} ₸</span></div>)}</div>
-            )}
+            <OrderPartsSection orderId={order.id} initialParts={order.parts} onRefresh={m.refresh} onError={m.setError} />
           </div>
 
           {m.statuses.length > 0 && (

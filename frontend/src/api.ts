@@ -145,6 +145,14 @@ export function updateOrderStatus(id: number, status_slug: string, comment?: str
   return request(`/orders/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status_slug, comment }) });
 }
 
+export function assignPartToOrder(orderId: number, partId: number, quantity: number) {
+  return request(`/orders/${orderId}/parts`, { method: 'POST', body: JSON.stringify({ part_id: partId, quantity }) });
+}
+
+export function deleteOrderPart(orderId: number, partId: number) {
+  return request(`/orders/${orderId}/parts/${partId}`, { method: 'DELETE' });
+}
+
 // --- Parts ---
 export type Part = {
   id: number; name: string; sku: string; compatible_models: string[];

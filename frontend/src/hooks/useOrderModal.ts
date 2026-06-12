@@ -112,6 +112,13 @@ export function useOrderModal({ orderId, preload, onOrderUpdated }: UseOrderModa
     finally { setSaving(false); }
   }
 
+  async function refresh() {
+    try {
+      const [o, s] = await Promise.all([getOrder(orderId), getOrderStatuses(orderId)]);
+      setOrder(o); setStatuses(s.available);
+    } catch (err) { setError(err instanceof Error ? err.message : 'Ошибка'); }
+  }
+
   return {
     order, statuses, loading, error, editing, setEditing, saving, groups,
     editCost, setEditCost, editDiscount, setEditDiscount,
@@ -119,6 +126,6 @@ export function useOrderModal({ orderId, preload, onOrderUpdated }: UseOrderModa
     editGroupId, setEditGroupId, editClientName, setEditClientName,
     editClientPhone, setEditClientPhone, editBrand, setEditBrand,
     editModel, setEditModel, editImei, setEditImei, editIssue, setEditIssue,
-    handleStatus, handleSave
+    handleStatus, handleSave, refresh, setError
   };
 }

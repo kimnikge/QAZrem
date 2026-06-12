@@ -10,11 +10,12 @@ const statusLabels: Record<string, string> = {
 
 interface Props {
   orderId: number;
-  preload?: Order;  // данные из списка — показываются мгновенно
+  preload?: Order;
   onClose: () => void;
+  onOrderUpdated?: () => void;
 }
 
-export function OrderModal({ orderId, preload, onClose }: Props) {
+export function OrderModal({ orderId, preload, onClose, onOrderUpdated }: Props) {
   const navigate = useNavigate();
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const [statuses, setStatuses] = useState<AvailableStatus[]>([]);
@@ -114,6 +115,7 @@ export function OrderModal({ orderId, preload, onClose }: Props) {
       setEditModel(o.model || '');
       setEditImei(o.imei || '');
       setEditIssue(o.issue_description || '');
+      onOrderUpdated?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка');
     }

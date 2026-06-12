@@ -31,6 +31,16 @@ const statusColors: Record<string, string> = {
   repair: 's-repair', ready: 's-ready', completed: 's-completed', cancelled: 's-cancelled'
 };
 
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  new: ['diagnosis', 'cancelled'],
+  diagnosis: ['waiting_parts', 'repair', 'ready', 'cancelled'],
+  waiting_parts: ['repair', 'cancelled'],
+  repair: ['ready', 'cancelled'],
+  ready: ['completed', 'cancelled'],
+  completed: [],
+  cancelled: []
+};
+
 type ColumnKey = 'id' | 'status' | 'priority' | 'deadline' | 'client' | 'device' | 'issue' | 'master' | 'group' | 'cost';
 
 const defaultColumns: { key: ColumnKey; label: string }[] = [
@@ -77,6 +87,7 @@ export function DashboardPage() {
   const [dragCol, setDragCol] = useState<ColumnKey | null>(null);
   const [compact, setCompact] = useState(false);
   const [modalOrder, setModalOrder] = useState<Order | null>(null);
+  const [statusDropdownId, setStatusDropdownId] = useState<number | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -103,6 +114,44 @@ export function DashboardPage() {
   useEffect(() => {
     getOrderGroups().then(setGroups).catch(() => {});
   }, []);
+
+  // Закрытие дропдауна по клику вне
+  useEffect(() => {
+    if (statusDropdownId === null) return;
+    function onClick() { setStatusDropdownId(null); }
+    document.addEventListener('click', onClick);
+    return () => document.removeEventListener('click', onClick);
+  }, [statusDropdownId]);
+  async function handleQuickStatusChange(orderId: number, slug: string) {
+    try {
+      await updateOrderStatus(orderId, slug);
+      // Обновляем заказ локально — меняем статус в массиве
+      setOrders(prev => prev.map(o =>
+        o.id === orderId ? { ...o, status_slug: slug, status_name: statusLabels[slug] || slug } : o
+      ));
+      setStatusDropdownId(null);
+    } catch (err) {
+      console.error('Ошибка смены статуса:', err);
+    }
+  }
+
+  // Колбэк для модалки — мягкое обновление таблицы
+  function handleModalRefresh() {
+    const statusMap: Record<string, string | undefined> = {
+      active: undefined, new: 'new', diagnosis: 'diagnosis',
+      waiting_parts: 'waiting_parts', repair: 'repair',
+      ready: 'ready', completed: 'completed', cancelled: 'cancelled',
+      overdue: undefined, my: undefined
+    };
+    const params: { status?: string; limit: number; overdue?: string; my?: string; group_id?: string } = {
+      status: statusMap[tab],
+      limit: 100
+    };
+    if (tab === 'overdue') params.overdue = 'true';
+    if (tab === 'my') params.my = 'true';
+    if (groupFilter) params.group_id = groupFilter;
+    getOrders(params).then(res => setOrders(res.orders)).catch(console.error);
+  }
 
   const counts = {
     new: orders.filter(o => o.status_slug === 'new').length,
@@ -144,13 +193,39 @@ export function DashboardPage() {
     switch (key) {
       case 'id':
         return <td key={key} className={`ro-cell-id${sticky}`}>#{o.id}{o.is_overdue && <span style={{ color: '#ef4444', marginLeft: 4 }}>⚠</span>}</td>;
-      case 'status':
-        return <td key={key}>
-          <span className={`ro-badge ${statusColors[o.status_slug]}`}>{statusLabels[o.status_slug]}</span>
+      case 'status': {
+        const available = STATUS_TRANSITIONS[o.status_slug] || [];
+        const isOpen = statusDropdownId === o.id;
+        return <td key={key} style={{ position: 'relative' }}>
+          <span
+            className={`ro-badge ${statusColors[o.status_slug]}`}
+            style={{ cursor: available.length > 0 ? 'pointer' : 'default' }}
+            onClick={(e) => {
+              e.stopPropagation();
+              setStatusDropdownId(isOpen ? null : o.id);
+            }}
+          >
+            {statusLabels[o.status_slug]}
+            {available.length > 0 && <span style={{ marginLeft: 4, fontSize: 10 }}>▾</span>}
+          </span>
+          {isOpen && available.length > 0 && (
+            <div className="status-dropdown" onClick={e => e.stopPropagation()}>
+              {available.map(slug => (
+                <button
+                  key={slug}
+                  className="status-dropdown-item"
+                  onClick={() => handleQuickStatusChange(o.id, slug)}
+                >
+                  {statusLabels[slug]}
+                </button>
+              ))}
+            </div>
+          )}
           <div style={{ fontSize: 11, color: '#9aa0a6', marginTop: 2 }}>
             {o.created_by_name || ''} · {new Date(o.created_at).toLocaleDateString()}
           </div>
         </td>;
+      }
       case 'priority':
         return <td key={key}>{o.priority !== 'normal' && <span className={`ro-priority ${o.priority}`}>{o.priority === 'urgent' ? 'Срочно' : 'Критично'}</span>}</td>;
       case 'deadline':
@@ -332,7 +407,7 @@ export function DashboardPage() {
       {!loading && orders.length === 0 && view === 'table' && <div className="empty-state"><p>Нет заказов</p></div>}
 
       {modalOrder && (
-        <OrderModal orderId={modalOrder.id} preload={modalOrder} onClose={() => setModalOrder(null)} />
+        <OrderModal orderId={modalOrder.id} preload={modalOrder} onClose={() => setModalOrder(null)} onOrderUpdated={handleModalRefresh} />
       )}
     </div>
   );

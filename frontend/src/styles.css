@@ -872,6 +872,51 @@ body.dark .btn-status:hover {
   border-color: rgba(139,92,246,0.3);
   color: #c4b5fd;
 }
+
+/* Status dropdown in table */
+.status-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 50;
+  min-width: 160px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.15);
+  padding: 4px;
+  margin-top: 2px;
+}
+.status-dropdown-item {
+  display: block;
+  width: 100%;
+  padding: 7px 12px;
+  border: none;
+  background: none;
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.1s;
+}
+.status-dropdown-item:hover {
+  background: var(--bg);
+  color: var(--primary);
+}
+body.dark .status-dropdown {
+  background: rgba(20,20,30,0.98);
+  backdrop-filter: blur(20px);
+  border-color: rgba(255,255,255,0.08);
+  box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+}
+body.dark .status-dropdown-item {
+  color: #d1d5db;
+}
+body.dark .status-dropdown-item:hover {
+  background: rgba(139,92,246,0.1);
+  color: #c4b5fd;
+}
 /* Dark: modal icon buttons */
 body.dark .modal-btn-icon {
   color: #6b7280;

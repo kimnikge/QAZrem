@@ -16,9 +16,10 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
 interface Props {
   orders: Order[];
   onOrderUpdated: () => void;
+  onCardOpen: (order: Order) => void;
 }
 
-export function BoardView({ orders, onOrderUpdated }: Props) {
+export function BoardView({ orders, onOrderUpdated, onCardOpen }: Props) {
   const [draggingId, setDraggingId] = useState<string | null>(null);
 
   const sensors = useSensors(
@@ -62,7 +63,7 @@ export function BoardView({ orders, onOrderUpdated }: Props) {
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div className="board">
         {columns.map(col => (
-          <BoardColumn key={col.status} status={col.status} orders={col.orders} />
+          <BoardColumn key={col.status} status={col.status} orders={col.orders} onCardOpen={onCardOpen} />
         ))}
       </div>
     </DndContext>

@@ -1,5 +1,4 @@
 import { useDraggable } from '@dnd-kit/core';
-import { useNavigate } from 'react-router-dom';
 import { Clock, User, Wrench, GripVertical } from 'lucide-react';
 import type { Order } from '../api';
 
@@ -10,10 +9,10 @@ const statusColors: Record<string, string> = {
 
 interface Props {
   order: Order;
+  onOpen: (order: Order) => void;
 }
 
-export function BoardCard({ order }: Props) {
-  const navigate = useNavigate();
+export function BoardCard({ order, onOpen }: Props) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `order-${order.id}`,
     data: { order }
@@ -31,7 +30,7 @@ export function BoardCard({ order }: Props) {
       {...attributes}
       style={style}
       className="board-card"
-      onClick={() => navigate(`/orders/${order.id}`)}
+      onClick={() => onOpen(order)}
     >
       <div className="board-card-header">
         <span className="board-card-id">#{order.id}</span>

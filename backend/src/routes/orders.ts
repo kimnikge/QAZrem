@@ -366,13 +366,21 @@ const updateOrderSchema = z.object({
   estimated_cost: z.number().nonnegative().optional(),
   discount: z.number().nonnegative().optional(),
   diagnosis: z.string().optional(),
+  issue_description: z.string().optional(),
   internal_comment: z.string().optional(),
   master_id: z.number().int().positive().optional(),
   master_commission_pct: z.number().min(0).max(100).optional(),
   deadline: z.string().optional(),
   priority: z.enum(['normal', 'urgent', 'critical']).optional(),
   source: z.string().optional(),
-  group_id: z.number().int().positive().optional().nullable()
+  group_id: z.number().int().positive().optional().nullable(),
+  // Client fields
+  client_name: z.string().min(2).optional(),
+  client_phone: z.string().min(5).optional(),
+  // Device fields
+  device_brand: z.string().min(1).optional(),
+  device_model: z.string().min(1).optional(),
+  device_imei: z.string().min(10).optional()
 });
 
 ordersRouter.patch('/:id', requireRole('admin', 'master'), async (req, res, next) => {
@@ -383,7 +391,7 @@ ordersRouter.patch('/:id', requireRole('admin', 'master'), async (req, res, next
     // Валидация: скидка не может превышать стоимость
     if (input.discount !== undefined) {
       const currentOrder = await pool.query(
-        'SELECT cost FROM orders WHERE id = $1',
+        'SELECT cost, device_id FROM orders WHERE id = $1',
         [id]
       );
       if (currentOrder.rows.length === 0) throw new NotFoundError('Заказ');
@@ -393,30 +401,114 @@ ordersRouter.patch('/:id', requireRole('admin', 'master'), async (req, res, next
       }
     }
 
-    const fields: string[] = [];
-    const values: unknown[] = [];
+    // Получаем текущий заказ для device_id (нужен для обновления устройства)
+    const orderRow = await pool.query(
+      'SELECT device_id FROM orders WHERE id = $1',
+      [id]
+    );
+    if (orderRow.rows.length === 0) throw new NotFoundError('Заказ');
+    const deviceId = orderRow.rows[0].device_id;
+
+    // Обновление полей заказа
+    const orderFields: string[] = [];
+    const orderValues: unknown[] = [];
     let idx = 1;
 
-    for (const [key, value] of Object.entries(input)) {
+    const orderFieldKeys = ['cost', 'estimated_cost', 'discount', 'diagnosis', 'issue_description',
+      'internal_comment', 'master_id', 'master_commission_pct', 'deadline', 'priority', 'source', 'group_id'];
+
+    for (const key of orderFieldKeys) {
+      const value = (input as Record<string, unknown>)[key];
       if (value !== undefined) {
-        fields.push(`${key} = $${idx++}`);
-        values.push(value);
+        orderFields.push(`${key} = $${idx++}`);
+        orderValues.push(value);
       }
     }
 
-    if (fields.length === 0) {
-      res.json({ message: 'Нет полей для обновления' });
-      return;
+    // Обновление устройства
+    const deviceFieldMap: Record<string, string> = {
+      device_brand: 'brand',
+      device_model: 'model',
+      device_imei: 'imei'
+    };
+    const deviceFields: string[] = [];
+    const deviceValues: unknown[] = [];
+
+    for (const [inputKey, colName] of Object.entries(deviceFieldMap)) {
+      const value = (input as Record<string, unknown>)[inputKey];
+      if (value !== undefined) {
+        deviceFields.push(`${colName} = $${deviceValues.length + 1}`);
+        deviceValues.push(value);
+      }
     }
 
-    values.push(id);
-    const result = await pool.query(
-      `UPDATE orders SET ${fields.join(', ')} WHERE id = $${idx}
-       RETURNING id, device_id, master_id, status_id, issue_description, diagnosis, cost, prepaid, internal_comment, created_at, completed_at`,
-      values
-    );
+    if (deviceFields.length > 0) {
+      deviceValues.push(deviceId);
+      await pool.query(
+        `UPDATE devices SET ${deviceFields.join(', ')} WHERE id = $${deviceValues.length}`,
+        deviceValues
+      );
+    }
 
-    if (result.rows.length === 0) throw new NotFoundError('Заказ');
+    // Обновление клиента (через devices.client_id)
+    const clientFieldMap: Record<string, string> = {
+      client_name: 'name',
+      client_phone: 'phone'
+    };
+    const clientFields: string[] = [];
+    const clientValues: unknown[] = [];
+
+    for (const [inputKey, colName] of Object.entries(clientFieldMap)) {
+      const value = (input as Record<string, unknown>)[inputKey];
+      if (value !== undefined) {
+        clientFields.push(`${colName} = $${clientValues.length + 1}`);
+        clientValues.push(value);
+      }
+    }
+
+    if (clientFields.length > 0) {
+      // Получаем client_id через device
+      const dev = await pool.query('SELECT client_id FROM devices WHERE id = $1', [deviceId]);
+      if (dev.rows.length > 0) {
+        const clientId = dev.rows[0].client_id;
+        clientValues.push(clientId);
+        await pool.query(
+          `UPDATE clients SET ${clientFields.join(', ')} WHERE id = $${clientValues.length}`,
+          clientValues
+        );
+      }
+    }
+
+    // Если есть поля заказа — обновляем
+    if (orderFields.length > 0) {
+      orderValues.push(id);
+      await pool.query(
+        `UPDATE orders SET ${orderFields.join(', ')} WHERE id = $${idx}`,
+        orderValues
+      );
+    }
+
+    // Возвращаем обновлённый заказ
+    const result = await pool.query(`
+      SELECT
+        o.id, o.device_id, o.master_id, o.status_id,
+        o.issue_description, o.diagnosis,
+        o.cost, o.estimated_cost, o.prepaid, o.discount, o.internal_comment,
+        o.deadline, o.status_deadline, o.priority, o.source,
+        o.master_commission_pct, o.group_id,
+        o.created_at, o.completed_at,
+        os.name as status_name, os.slug as status_slug,
+        d.brand, d.model, d.imei,
+        c.id as client_id, c.name as client_name, c.phone as client_phone,
+        u.name as master_name
+      FROM orders o
+      JOIN order_statuses os ON o.status_id = os.id
+      JOIN devices d ON o.device_id = d.id
+      JOIN clients c ON d.client_id = c.id
+      LEFT JOIN users u ON o.master_id = u.id
+      WHERE o.id = $1
+    `, [id]);
+
     res.json(result.rows[0]);
   } catch (error) {
     next(error);

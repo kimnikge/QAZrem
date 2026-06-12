@@ -54,10 +54,11 @@ const authLimiter = rateLimit({
   legacyHeaders: false
 });
 
-// Rate limiting на мутирующие эндпоинты (макс 30 запросов в минуту)
+// Rate limiting на мутирующие эндпоинты
+// В dev-режиме лимит повышен, чтобы не мешать разработке
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 30,
+  max: process.env.NODE_ENV === 'production' ? 60 : 1000,
   message: { error: 'Слишком много запросов. Повторите через минуту' },
   standardHeaders: true,
   legacyHeaders: false

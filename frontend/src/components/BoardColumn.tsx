@@ -15,9 +15,10 @@ const colLabels: Record<string, string> = {
 interface Props {
   status: string;
   orders: Order[];
+  onCardOpen: (order: Order) => void;
 }
 
-export function BoardColumn({ status, orders }: Props) {
+export function BoardColumn({ status, orders, onCardOpen }: Props) {
   const { setNodeRef, isOver } = useDroppable({ id: status });
   const color = colColors[status] || '#6b7280';
 
@@ -33,7 +34,7 @@ export function BoardColumn({ status, orders }: Props) {
       </div>
       <div className="board-column-body">
         {orders.map(order => (
-          <BoardCard key={order.id} order={order} />
+          <BoardCard key={order.id} order={order} onOpen={onCardOpen} />
         ))}
         {orders.length === 0 && (
           <div className="board-column-empty">Нет заказов</div>

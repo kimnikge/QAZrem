@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { getOrders, updateOrderStatus, getOrderGroups, type Order, type OrderGroup } from '../api';
 import { useAuth } from '../context/AuthContext';
 import { BoardView } from '../components/BoardView';
+import { OrderModal } from '../components/OrderModal';
 import { LayoutList, Kanban, Download, RotateCcw, Maximize2, Minimize2 } from 'lucide-react';
 
 const apiUrl = import.meta.env.VITE_API_URL || '/api';
@@ -75,6 +76,7 @@ export function DashboardPage() {
   const [colOrder, setColOrder] = useState<ColumnKey[]>(loadColumnOrder);
   const [dragCol, setDragCol] = useState<ColumnKey | null>(null);
   const [compact, setCompact] = useState(false);
+  const [modalOrder, setModalOrder] = useState<Order | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -269,7 +271,7 @@ export function DashboardPage() {
             if (tab === 'overdue') params.overdue = 'true';
             if (tab === 'my') params.my = 'true';
             getOrders(params).then(res => setOrders(res.orders)).catch(console.error);
-          }} />
+          }} onCardOpen={(o) => setModalOrder(o)} />
         ) : (
         <div className="ro-table-wrap">
           <table className={`ro-table${compact ? ' compact' : ''}`}>
@@ -316,7 +318,7 @@ export function DashboardPage() {
               {orders.map(o => {
                 const priClass = o.priority !== 'normal' ? ` priority-${o.priority}` : '';
                 return (
-                <tr key={o.id} className={`ro-row${o.is_overdue ? ' overdue' : ''}${priClass}`} onClick={() => navigate(`/orders/${o.id}`)}>
+                <tr key={o.id} className={`ro-row${o.is_overdue ? ' overdue' : ''}${priClass}`} onClick={() => setModalOrder(o)}>
                   {colOrder.map(key => renderCell(key, o))}
                 </tr>
                 );
@@ -328,6 +330,10 @@ export function DashboardPage() {
       )}
 
       {!loading && orders.length === 0 && view === 'table' && <div className="empty-state"><p>Нет заказов</p></div>}
+
+      {modalOrder && (
+        <OrderModal orderId={modalOrder.id} preload={modalOrder} onClose={() => setModalOrder(null)} />
+      )}
     </div>
   );
 }

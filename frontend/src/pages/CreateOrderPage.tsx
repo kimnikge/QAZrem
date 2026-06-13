@@ -109,7 +109,7 @@ export function CreateOrderPage() {
             <div style={{ position: 'relative' }}>
               <input className="glass-input" placeholder="Бренд *" value={form.device.brand}
                 onChange={e => { setDevice('brand', e.target.value); ac.handleCatalogInput('brand', e.target.value); }}
-                onFocus={() => form.device.brand.length >= 2 && ac.hideSuggestions} onBlur={ac.hideSuggestions} required />
+                onFocus={() => { if (form.device.brand.length >= 2) ac.handleCatalogInput('brand', form.device.brand); }} onBlur={ac.hideSuggestions} required />
               {ac.showCatalog && ac.catalogField === 'brand' && <div className="glass-suggestions">
                 {[...new Set(ac.catalogSuggestions.map(i => i.brand))].map(b => (
                   <div key={b} className="glass-suggestion-item" onMouseDown={() => { const it = ac.catalogSuggestions.find(i => i.brand === b)!; const d = ac.selectCatalog(it); setForm(p => ({ ...p, device: { ...p.device, ...d } })); }}>{b}</div>))}</div>}
@@ -117,7 +117,7 @@ export function CreateOrderPage() {
             <div style={{ position: 'relative' }}>
               <input className="glass-input" placeholder="Модель *" value={form.device.model}
                 onChange={e => { setDevice('model', e.target.value); ac.handleCatalogInput('model', e.target.value); }}
-                onFocus={() => form.device.model.length >= 2 && ac.hideSuggestions} onBlur={ac.hideSuggestions} required />
+                onFocus={() => { if (form.device.model.length >= 2) ac.handleCatalogInput('model', form.device.model); }} onBlur={ac.hideSuggestions} required />
               {ac.showCatalog && ac.catalogField === 'model' && <div className="glass-suggestions">
                 {ac.catalogSuggestions.filter(i => i.brand === form.device.brand || !form.device.brand).map((item, idx) => (
                   <div key={idx} className="glass-suggestion-item" onMouseDown={() => { const d = ac.selectCatalog(item); setForm(p => ({ ...p, device: { ...p.device, ...d } })); }}>{item.brand} {item.model}</div>))}</div>}
@@ -125,7 +125,7 @@ export function CreateOrderPage() {
             <div style={{ position: 'relative' }}>
               <input className="glass-input" placeholder="IMEI *" value={form.device.imei}
                 onChange={e => { setDevice('imei', e.target.value); ac.handleImeiInput(e.target.value); }}
-                onFocus={() => ac.showImei && ac.hideSuggestions} onBlur={ac.hideSuggestions} required />
+                onFocus={() => { if (form.device.imei.length >= 4) ac.handleImeiInput(form.device.imei); }} onBlur={ac.hideSuggestions} required />
               {ac.showImei && <div className="glass-suggestions">{ac.imeiSuggestions.map(dev => (
                 <div key={dev.device_id} className="glass-suggestion-item" onMouseDown={() => { const d = ac.selectImeiDevice(dev); setForm(p => ({ ...p, client: d.client, device: { ...p.device, ...d.device, serial_number: '', color: '' } })); }}>
                   <strong>{dev.brand} {dev.model}</strong>

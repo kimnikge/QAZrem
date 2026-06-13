@@ -52,10 +52,14 @@ export function useOrderAutocomplete() {
     catalogTimer.current = setTimeout(async () => {
       try {
         const res = await searchDeviceCatalog(value);
+        console.log('[catalog] q=' + value + ' results=' + res.length);
         setCatalogSuggestions(res);
         setShowCatalog(res.length > 0);
         setCatalogField(field);
-      } catch { setShowCatalog(false); }
+      } catch (e) {
+        console.error('[catalog] error:', e);
+        setShowCatalog(false);
+      }
     }, 300);
   }
 

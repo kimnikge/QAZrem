@@ -105,7 +105,7 @@ export function CreateOrderPage() {
         </div>
         <div className="glass-card">
           <div className="glass-card-legend">Устройство и неисправность</div>
-          <div className="glass-grid glass-grid-3" style={{ position: 'relative', zIndex: 10 }}>
+          <div className="glass-grid glass-grid-3">
             <div style={{ position: 'relative' }}>
               <input className="glass-input" placeholder="Бренд *" value={form.device.brand}
                 onChange={e => { setDevice('brand', e.target.value); ac.handleCatalogInput('brand', e.target.value); }}

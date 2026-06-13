@@ -1738,10 +1738,7 @@ body.dark .modal-select:focus {
   100% { background-position: 0% 50%; }
 }
 
-.glass-card > * { position: relative; z-index: 1; }
-
-/* Контейнер с autocomplete-подсказками должен быть выше соседних элементов */
-.glass-grid:has(.glass-suggestions) { z-index: 10; }
+.glass-card > * { position: relative; }
 
 .glass-card:nth-child(1) { animation: fadeInUp 0.4s ease-out both; }
 .glass-card:nth-child(2) { animation: fadeInUp 0.4s 0.08s ease-out both; }

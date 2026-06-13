@@ -84,6 +84,15 @@ catalogRouter.post('/', async (req, res, next) => {
        RETURNING id, brand, model, group_name`,
       [input.brand, input.model, input.group_name || null]
     );
+
+    // Auto-sync group to order_groups
+    if (input.group_name) {
+      await pool.query(
+        `INSERT INTO order_groups (name) VALUES ($1) ON CONFLICT (name) DO NOTHING`,
+        [input.group_name]
+      );
+    }
+
     res.status(201).json(result.rows[0]);
   } catch (error) {
     next(error);
@@ -119,6 +128,15 @@ catalogRouter.put('/:id', async (req, res, next) => {
       [input.brand, input.model, input.group_name || null, id]
     );
     if (result.rows.length === 0) throw new NotFoundError('Устройство в каталоге');
+
+    // Auto-sync group to order_groups
+    if (input.group_name) {
+      await pool.query(
+        `INSERT INTO order_groups (name) VALUES ($1) ON CONFLICT (name) DO NOTHING`,
+        [input.group_name]
+      );
+    }
+
     res.json(result.rows[0]);
   } catch (error) {
     next(error);
@@ -175,6 +193,15 @@ catalogRouter.post('/import', async (req, res, next) => {
       } catch {
         skipped++;
       }
+    }
+
+    // Auto-sync groups to order_groups
+    const uniqueGroups = [...new Set(items.map(i => i.group_name).filter(Boolean))];
+    for (const g of uniqueGroups) {
+      await pool.query(
+        `INSERT INTO order_groups (name) VALUES ($1) ON CONFLICT (name) DO NOTHING`,
+        [g]
+      );
     }
 
     res.json({ inserted, skipped, total: items.length });

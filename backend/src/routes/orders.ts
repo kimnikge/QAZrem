@@ -96,13 +96,13 @@ ordersRouter.get('/', async (req, res, next) => {
         o.issue_description, o.diagnosis,
         o.cost, o.estimated_cost, o.prepaid, o.discount, o.internal_comment,
         o.deadline, o.status_deadline, o.priority, o.source,
-        o.master_commission_pct, o.group_id,
+        o.master_commission_pct, o.group_id, o.location_id,
         o.created_at, o.completed_at,
         (o.deadline IS NOT NULL AND o.deadline < NOW() AND os.is_final = FALSE) AS is_overdue,
         os.name AS status_name, os.slug AS status_slug,
         d.brand, d.model, d.imei,
         c.id AS client_id, c.name AS client_name, c.phone AS client_phone, c.address AS client_address,
-        u.name AS master_name, og.name AS group_name,
+        u.name AS master_name, og.name AS group_name, l.name AS location_name,
         cu.name AS created_by_name
       FROM orders o
       JOIN order_statuses os ON os.id = o.status_id
@@ -110,6 +110,7 @@ ordersRouter.get('/', async (req, res, next) => {
       JOIN clients c ON c.id = d.client_id
       LEFT JOIN users u ON u.id = o.master_id
       LEFT JOIN order_groups og ON og.id = o.group_id
+      LEFT JOIN locations l ON l.id = o.location_id
       LEFT JOIN LATERAL (
         SELECT uh.user_id, us.name
         FROM order_history uh
@@ -264,12 +265,12 @@ ordersRouter.get('/:id', async (req, res, next) => {
         o.issue_description, o.diagnosis, o.cost, o.estimated_cost,
         o.prepaid, o.discount, o.internal_comment,
         o.deadline, o.status_deadline, o.priority, o.source,
-        o.master_commission_pct, o.group_id,
+        o.master_commission_pct, o.group_id, o.location_id,
         o.created_at, o.completed_at,
         os.name AS status_name, os.slug AS status_slug, os.is_final,
         d.brand, d.model, d.imei, d.serial_number, d.color,
         c.id AS client_id, c.name AS client_name, c.phone AS client_phone, c.email AS client_email, c.address AS client_address,
-        u.name AS master_name, og.name AS group_name,
+        u.name AS master_name, og.name AS group_name, l.name AS location_name,
         cu.name AS created_by_name
       FROM orders o
       JOIN order_statuses os ON os.id = o.status_id
@@ -277,6 +278,7 @@ ordersRouter.get('/:id', async (req, res, next) => {
       JOIN clients c ON c.id = d.client_id
       LEFT JOIN users u ON u.id = o.master_id
       LEFT JOIN order_groups og ON og.id = o.group_id
+      LEFT JOIN locations l ON l.id = o.location_id
       LEFT JOIN LATERAL (
         SELECT us.name FROM order_history uh
         LEFT JOIN users us ON us.id = uh.user_id
@@ -623,8 +625,8 @@ ordersRouter.post('/', requireRole('admin', 'reception'), async (req, res, next)
 
     // Создаём заказ
     const orderResult = await client.query(
-      `INSERT INTO orders (device_id, master_id, status_id, issue_description, deadline, priority, source, estimated_cost, discount, master_commission_pct, group_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      `INSERT INTO orders (device_id, master_id, status_id, issue_description, deadline, priority, source, estimated_cost, discount, master_commission_pct, group_id, location_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
        RETURNING id`,
       [
         deviceId,
@@ -637,7 +639,8 @@ ordersRouter.post('/', requireRole('admin', 'reception'), async (req, res, next)
         req.body.estimated_cost || 0,
         req.body.discount || 0,
         masterCommissionPct,
-        req.body.group_id || null
+        req.body.group_id || null,
+        req.body.location_id || null
       ]
     );
     const orderId = orderResult.rows[0].id;

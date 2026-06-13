@@ -6,10 +6,11 @@ import {
   createExpenseCategory, deleteExpenseCategory,
   createUser, updateUser, deleteUser,
   getOrderGroups, createOrderGroup, updateOrderGroup, deleteOrderGroup,
-  type SettingsData, type UserCreateInput, type UserUpdateInput, type OrderGroup
+  getLocations, createLocation, updateLocation, deleteLocation,
+  type SettingsData, type UserCreateInput, type UserUpdateInput, type OrderGroup, type Location
 } from '../api';
 
-type Tab = 'users' | 'statuses' | 'payments' | 'expenses' | 'groups';
+type Tab = 'users' | 'statuses' | 'payments' | 'expenses' | 'groups' | 'locations';
 
 const roleLabels: Record<string, string> = {
   admin: 'Админ',
@@ -155,6 +156,14 @@ export function SettingsPage() {
   const [editGroupId, setEditGroupId] = useState<number | null>(null);
   const [editGroupName, setEditGroupName] = useState('');
 
+  // Locations
+  const [locations, setLocations] = useState<Location[]>([]);
+  const [newLocationName, setNewLocationName] = useState('');
+  const [newLocationAddress, setNewLocationAddress] = useState('');
+  const [editLocationId, setEditLocationId] = useState<number | null>(null);
+  const [editLocationName, setEditLocationName] = useState('');
+  const [editLocationAddress, setEditLocationAddress] = useState('');
+
   // User form modal
   const [userModal, setUserModal] = useState<{ mode: 'create' } | { mode: 'edit'; user: SettingsData['users'][0] } | null>(null);
   const [deletingUserId, setDeletingUserId] = useState<number | null>(null);
@@ -172,7 +181,7 @@ export function SettingsPage() {
     }
   }
 
-  useEffect(() => { load(); loadGroups(); }, []);
+  useEffect(() => { load(); loadGroups(); loadLocations(); }, []);
 
   async function loadGroups() {
     try {
@@ -258,6 +267,47 @@ export function SettingsPage() {
     }
   }
 
+  async function loadLocations() {
+    try {
+      setLocations(await getLocations());
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  async function handleAddLocation() {
+    if (!newLocationName.trim()) return;
+    try {
+      await createLocation({ name: newLocationName.trim(), address: newLocationAddress.trim() || undefined });
+      setNewLocationName('');
+      setNewLocationAddress('');
+      await loadLocations();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Ошибка');
+    }
+  }
+
+  async function handleSaveLocation() {
+    if (!editLocationId || !editLocationName.trim()) return;
+    try {
+      await updateLocation(editLocationId, { name: editLocationName.trim(), address: editLocationAddress.trim() || undefined });
+      setEditLocationId(null);
+      await loadLocations();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Ошибка');
+    }
+  }
+
+  async function handleDeleteLocation(id: number, name: string) {
+    if (!confirm(`Удалить локацию "${name}"?`)) return;
+    try {
+      await deleteLocation(id);
+      await loadLocations();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Ошибка');
+    }
+  }
+
   async function handleDeleteUser(id: number, name: string) {
     if (!confirm(`Удалить пользователя "${name}"?`)) return;
     setDeletingUserId(id);
@@ -275,6 +325,7 @@ export function SettingsPage() {
     { key: 'users', label: 'Пользователи' },
     { key: 'statuses', label: 'Статусы заказов' },
     { key: 'groups', label: 'Группы заказов' },
+    { key: 'locations', label: 'Локации' },
     { key: 'payments', label: 'Способы оплаты' },
     { key: 'expenses', label: 'Категории расходов' },
   ];
@@ -388,6 +439,88 @@ export function SettingsPage() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {/* ============================================================ */}
+          {/* Вкладка: Локации */}
+          {/* ============================================================ */}
+          {tab === 'locations' && (
+            <div>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+                <input
+                  className="filter-select"
+                  placeholder="Название локации"
+                  value={newLocationName}
+                  onChange={e => setNewLocationName(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleAddLocation()}
+                  style={{ flex: 1 }}
+                />
+                <input
+                  className="filter-select"
+                  placeholder="Адрес"
+                  value={newLocationAddress}
+                  onChange={e => setNewLocationAddress(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleAddLocation()}
+                  style={{ flex: 1 }}
+                />
+                <button className="ro-btn-primary" onClick={handleAddLocation}>Добавить</button>
+              </div>
+              <div className="ro-table-wrap">
+                <table className="ro-table">
+                  <thead><tr><th>ID</th><th>Название</th><th>Адрес</th><th style={{ width: 120 }}></th></tr></thead>
+                  <tbody>
+                    {locations.map(l => (
+                      <tr key={l.id}>
+                        <td>{l.id}</td>
+                        <td>
+                          {editLocationId === l.id ? (
+                            <input
+                              value={editLocationName}
+                              onChange={e => setEditLocationName(e.target.value)}
+                              onKeyDown={e => { if (e.key === 'Enter') handleSaveLocation(); if (e.key === 'Escape') setEditLocationId(null); }}
+                              autoFocus
+                              style={{ padding: '4px 8px', border: '1px solid var(--primary)', borderRadius: 4, fontSize: 13, width: '100%' }}
+                            />
+                          ) : (
+                            <strong>{l.name}</strong>
+                          )}
+                        </td>
+                        <td>
+                          {editLocationId === l.id ? (
+                            <input
+                              value={editLocationAddress}
+                              onChange={e => setEditLocationAddress(e.target.value)}
+                              onKeyDown={e => { if (e.key === 'Enter') handleSaveLocation(); if (e.key === 'Escape') setEditLocationId(null); }}
+                              style={{ padding: '4px 8px', border: '1px solid var(--primary)', borderRadius: 4, fontSize: 13, width: '100%' }}
+                            />
+                          ) : (
+                            <span style={{ color: l.address ? 'var(--text)' : '#9ca3af', fontSize: 13 }}>{l.address || '—'}</span>
+                          )}
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            {editLocationId === l.id ? (
+                              <>
+                                <button className="btn-status" onClick={handleSaveLocation} title="Сохранить" style={{ color: '#16a34a' }}>✓</button>
+                                <button className="btn-status" onClick={() => setEditLocationId(null)} title="Отмена" style={{ color: '#6b7280' }}>✕</button>
+                              </>
+                            ) : (
+                              <>
+                                <button className="btn-status" onClick={() => { setEditLocationId(l.id); setEditLocationName(l.name); setEditLocationAddress(l.address || ''); }} title="Редактировать">✏️</button>
+                                <button className="btn-status" onClick={() => handleDeleteLocation(l.id, l.name)} style={{ color: '#ef4444' }} title="Удалить">✕</button>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {locations.length === 0 && (
+                      <tr><td colSpan={4} style={{ textAlign: 'center', color: '#9ca3af', padding: 24 }}>Нет локаций</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 

@@ -1,4 +1,4 @@
-import type { CreateOrderInput } from '../api';
+import type { CreateOrderInput, Location } from '../api';
 
 const priorities = [
   { value: 'normal', label: 'Обычный' },
@@ -20,9 +20,10 @@ interface Props {
   form: CreateOrderInput;
   setForm: (updater: (prev: CreateOrderInput) => CreateOrderInput) => void;
   masters: Array<{ id: number; name: string }>;
+  locations: Location[];
 }
 
-export function OrderParamsCard({ form, setForm, masters }: Props) {
+export function OrderParamsCard({ form, setForm, masters, locations }: Props) {
   const today = new Date().toISOString().split('T')[0];
 
   return (
@@ -50,6 +51,15 @@ export function OrderParamsCard({ form, setForm, masters }: Props) {
           </select>
         </div>
       </div>
+      {locations.length > 0 && (
+        <div style={{ marginTop: 10 }}>
+          <label className="glass-label">Локация *</label>
+          <select className="glass-select" value={form.location_id || ''} onChange={e => setForm(prev => ({ ...prev, location_id: e.target.value ? Number(e.target.value) : undefined }))} required>
+            <option value="" disabled>— Выберите локацию —</option>
+            {locations.map(l => <option key={l.id} value={l.id}>{l.name}{l.address ? ` (${l.address})` : ''}</option>)}
+          </select>
+        </div>
+      )}
       <div className="glass-grid glass-grid-3" style={{ marginTop: 10 }}>
         <div>
           <label className="glass-label">Предв. стоимость</label>

@@ -117,6 +117,8 @@ export type Order = {
   created_by_name: string | null;
   group_id: number | null;
   group_name: string | null;
+  location_id: number | null;
+  location_name: string | null;
 };
 
 export type OrderListResponse = { orders: Order[]; total: number; limit: number; offset: number };
@@ -157,6 +159,7 @@ export type CreateOrderInput = {
   discount?: number;
   parts?: Array<{ part_id: number; quantity: number }>;
   group_id?: number;
+  location_id?: number;
 };
 
 export function createOrder(input: CreateOrderInput) {
@@ -336,6 +339,25 @@ export function createExpenseCategory(name: string) {
 
 export function deleteExpenseCategory(id: number) {
   return request(`/settings/expense-categories/${id}`, { method: 'DELETE' });
+}
+
+// --- Locations ---
+export type Location = { id: number; name: string; address: string | null; created_at: string };
+
+export function getLocations() {
+  return request<Location[]>('/locations');
+}
+
+export function createLocation(input: { name: string; address?: string }) {
+  return request<Location>('/locations', { method: 'POST', body: JSON.stringify(input) });
+}
+
+export function updateLocation(id: number, input: { name: string; address?: string }) {
+  return request<Location>(`/locations/${id}`, { method: 'PUT', body: JSON.stringify(input) });
+}
+
+export function deleteLocation(id: number) {
+  return request<{ deleted: boolean }>(`/locations/${id}`, { method: 'DELETE' });
 }
 
 // --- User management (admin) ---

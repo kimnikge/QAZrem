@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { createOrder, getMasters, getOrderGroups, type CreateOrderInput, type OrderGroup } from '../api';
+import { createOrder, getMasters, getLocations, getOrderGroups, type CreateOrderInput, type Location, type OrderGroup } from '../api';
 import { Wrench, FileText, Plus, UserPlus } from 'lucide-react';
 import { OrderPartsTab } from '../components/OrderPartsTab';
 import { OrderParamsCard } from '../components/OrderParamsCard';
@@ -10,6 +10,7 @@ export function CreateOrderPage() {
   const navigate = useNavigate();
   const [masters, setMasters] = useState<Array<{ id: number; name: string }>>([]);
   const [groups, setGroups] = useState<OrderGroup[]>([]);
+  const [locations, setLocations] = useState<Location[]>([]);
 
   const ac = useOrderAutocomplete();
 
@@ -26,6 +27,7 @@ export function CreateOrderPage() {
   useEffect(() => {
     getMasters().then(setMasters).catch(() => {});
     getOrderGroups().then(setGroups).catch(() => {});
+    getLocations().then(setLocations).catch(() => {});
   }, []);
 
   function setClient(f: 'name' | 'phone' | 'email' | 'address', v: string) {
@@ -51,6 +53,7 @@ export function CreateOrderPage() {
         source: form.source,
         parts: selectedParts.length > 0 ? selectedParts.map(p => ({ part_id: p.part_id, quantity: p.quantity })) : undefined,
         group_id: form.group_id || undefined,
+        location_id: form.location_id || undefined,
         client: { ...form.client, email: form.client.email || undefined, address: form.client.address || undefined },
         device: { ...form.device, serial_number: form.device.serial_number || undefined, color: form.device.color || undefined },
       };
@@ -146,7 +149,7 @@ export function CreateOrderPage() {
           <textarea className="glass-textarea" placeholder="Описание неисправности *" value={form.issue_description}
             onChange={e => setForm(p => ({ ...p, issue_description: e.target.value }))} required rows={2} style={{ marginTop: 10 }} />
         </div>
-        <OrderParamsCard form={form} setForm={setForm} masters={masters} />
+        <OrderParamsCard form={form} setForm={setForm} masters={masters} locations={locations} />
         </>)}
         {tab === 'parts' && <OrderPartsTab selectedParts={selectedParts} onPartsChange={setSelectedParts} />}
         <div className="glass-actions">

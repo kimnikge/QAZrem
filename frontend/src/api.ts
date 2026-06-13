@@ -59,6 +59,8 @@ export function search(q: string) {
 
 // --- Device catalog ---
 export type CatalogItem = { brand: string; model: string };
+export type CatalogEntry = { id: number; brand: string; model: string; group_name: string | null };
+export type CatalogListResponse = { items: CatalogEntry[]; total: number; groups: string[] };
 export type ImeiSearchResult = {
   device_id: number; brand: string; model: string; imei: string;
   client_id: number; client_name: string; client_phone: string;
@@ -66,6 +68,32 @@ export type ImeiSearchResult = {
 
 export function searchDeviceCatalog(q: string) {
   return request<CatalogItem[]>(`/devices/catalog?q=${encodeURIComponent(q)}`);
+}
+
+export function getCatalog(params?: { search?: string; group?: string; limit?: number; offset?: number }) {
+  const query = new URLSearchParams();
+  if (params?.search) query.set('search', params.search);
+  if (params?.group) query.set('group', params.group);
+  if (params?.limit) query.set('limit', String(params.limit || 100));
+  if (params?.offset) query.set('offset', String(params.offset || 0));
+  const qs = query.toString();
+  return request<CatalogListResponse>(`/catalog${qs ? `?${qs}` : ''}`);
+}
+
+export function createCatalogEntry(input: { brand: string; model: string; group_name?: string }) {
+  return request<CatalogEntry>('/catalog', { method: 'POST', body: JSON.stringify(input) });
+}
+
+export function updateCatalogEntry(id: number, input: { brand: string; model: string; group_name?: string }) {
+  return request<CatalogEntry>(`/catalog/${id}`, { method: 'PUT', body: JSON.stringify(input) });
+}
+
+export function deleteCatalogEntry(id: number) {
+  return request<{ deleted: boolean }>(`/catalog/${id}`, { method: 'DELETE' });
+}
+
+export function importCatalog(items: Array<{ brand: string; model: string; group_name?: string }>) {
+  return request<{ inserted: number; skipped: number; total: number }>('/catalog/import', { method: 'POST', body: JSON.stringify(items) });
 }
 
 export function searchDeviceByImei(last4: string) {

@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { Layout } from './components/Layout';
 import { LoginPage } from './pages/LoginPage';
 import { AnalyticsPage } from './pages/AnalyticsPage';
+import { CatalogPage } from './pages/CatalogPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { CreateOrderPage } from './pages/CreateOrderPage';
@@ -31,6 +32,7 @@ function AppRoutes() {
         <Route path="/orders/:id" element={<OrderDetailPage />} />
         <Route path="/print-order/:id" element={<PrintOrderPage />} />
         <Route path="/parts" element={<PartsPage />} />
+        <Route path="/catalog" element={<CatalogPage />} />
         <Route path="/services" element={<ServicesPage />} />
         <Route path="/finance" element={<FinancePage />} />
         <Route path="/analytics" element={<AnalyticsPage />} />

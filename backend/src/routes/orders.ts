@@ -534,9 +534,17 @@ ordersRouter.post('/', requireRole('admin', 'reception'), async (req, res, next)
         throw new BadRequestError('Скидка не может превышать стоимость заказа');
       }
 
-      const device = await client.query('SELECT id, client_id FROM devices WHERE id = $1', [input.device_id]);
+      const device = await client.query('SELECT id, client_id, brand, model FROM devices WHERE id = $1', [input.device_id]);
       if (device.rows.length === 0) throw new NotFoundError('Устройство');
       deviceId = device.rows[0].id;
+
+      // Автодобавление в каталог
+      await client.query(
+        `INSERT INTO device_catalog (brand, model)
+         VALUES ($1, $2)
+         ON CONFLICT (brand, model) DO NOTHING`,
+        [device.rows[0].brand, device.rows[0].model]
+      );
     }
     // Сценарий B: новый клиент + новое устройство
     else {
@@ -582,6 +590,14 @@ ordersRouter.post('/', requireRole('admin', 'reception'), async (req, res, next)
         ]
       );
       deviceId = deviceResult.rows[0].id;
+
+      // Автодобавление в каталог
+      await client.query(
+        `INSERT INTO device_catalog (brand, model)
+         VALUES ($1, $2)
+         ON CONFLICT (brand, model) DO NOTHING`,
+        [input.device.brand, input.device.model]
+      );
     }
 
     // Получаем ID статуса "new"

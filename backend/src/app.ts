@@ -8,6 +8,7 @@ import { ZodError } from 'zod';
 import { env } from './config/env.js';
 import { AppError } from './lib/errors.js';
 import { authRouter } from './routes/auth.js';
+import { catalogRouter } from './routes/catalog.js';
 import { clientsRouter } from './routes/clients.js';
 import { devicesRouter } from './routes/devices.js';
 import { expensesRouter } from './routes/expenses.js';
@@ -75,6 +76,7 @@ app.use(apiLimiter);
 
 // Защищённые роуты (требуется JWT)
 app.use('/search', requireAuth, searchRouter);
+app.use('/catalog', requireAuth, catalogRouter);
 app.use('/clients', requireAuth, clientsRouter);
 app.use('/devices', devicesRouter);
 app.use('/orders', ordersRouter);

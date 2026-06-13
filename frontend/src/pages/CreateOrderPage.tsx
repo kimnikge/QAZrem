@@ -134,10 +134,19 @@ export function CreateOrderPage() {
             <input className="glass-input" placeholder="Серийный номер" value={form.device.serial_number || ''} onChange={e => setDevice('serial_number', e.target.value)} />
             <input className="glass-input" placeholder="Цвет" value={form.device.color || ''} onChange={e => setDevice('color', e.target.value)} />
           </div>
+          {groups.length > 0 && (
+            <div style={{ marginTop: 10 }}>
+              <label className="glass-label">Группа</label>
+              <select className="glass-select" value={form.group_id || ''} onChange={e => setForm(prev => ({ ...prev, group_id: e.target.value ? Number(e.target.value) : undefined }))}>
+                <option value="">— Без группы —</option>
+                {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+              </select>
+            </div>
+          )}
           <textarea className="glass-textarea" placeholder="Описание неисправности *" value={form.issue_description}
             onChange={e => setForm(p => ({ ...p, issue_description: e.target.value }))} required rows={2} style={{ marginTop: 10 }} />
         </div>
-        <OrderParamsCard form={form} setForm={setForm} masters={masters} groups={groups} />
+        <OrderParamsCard form={form} setForm={setForm} masters={masters} />
         </>)}
         {tab === 'parts' && <OrderPartsTab selectedParts={selectedParts} onPartsChange={setSelectedParts} />}
         <div className="glass-actions">

@@ -20,10 +20,9 @@ interface Props {
   form: CreateOrderInput;
   setForm: (updater: (prev: CreateOrderInput) => CreateOrderInput) => void;
   masters: Array<{ id: number; name: string }>;
-  groups: Array<{ id: number; name: string; order_count: number }>;
 }
 
-export function OrderParamsCard({ form, setForm, masters, groups }: Props) {
+export function OrderParamsCard({ form, setForm, masters }: Props) {
   const today = new Date().toISOString().split('T')[0];
 
   return (
@@ -65,15 +64,6 @@ export function OrderParamsCard({ form, setForm, masters, groups }: Props) {
           <input className="glass-input" type="date" value={form.deadline || ''} onChange={e => setForm(prev => ({ ...prev, deadline: e.target.value }))} min={today} />
         </div>
       </div>
-      {groups.length > 0 && (
-        <div style={{ marginTop: 10 }}>
-          <label className="glass-label">Группа</label>
-          <select className="glass-select" value={form.group_id || ''} onChange={e => setForm(prev => ({ ...prev, group_id: e.target.value ? Number(e.target.value) : undefined }))}>
-            <option value="">— Без группы —</option>
-            {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-          </select>
-        </div>
-      )}
     </div>
   );
 }

@@ -60,7 +60,7 @@ export function useOrderAutocomplete() {
         console.error('[catalog] error:', e);
         setShowCatalog(false);
       }
-    }, 300);
+    }, 200);
   }
 
   function selectCatalog(item: CatalogItem) {

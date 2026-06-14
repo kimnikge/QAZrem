@@ -1,11 +1,7 @@
 import { useDraggable } from '@dnd-kit/core';
 import { Clock, User, Wrench, GripVertical } from 'lucide-react';
 import type { Order } from '../api';
-
-const statusLabels: Record<string, string> = {
-  new: 'Новый', diagnosis: 'Диагностика', waiting_parts: 'Ожидание',
-  repair: 'Ремонт', ready: 'Готов', completed: 'Выдан', cancelled: 'Отказ'
-};
+import { STATUS_LABELS_SHORT } from '../constants';
 
 interface Props {
   order: Order;
@@ -37,7 +33,7 @@ export function BoardCard({ order, onOpen }: Props) {
         <div className="board-card-left">
           <span className="board-card-id">Заказ №{order.id}</span>
           <span className={`board-card-status status-${order.status_slug}`}>
-            {statusLabels[order.status_slug] || order.status_name}
+            {STATUS_LABELS_SHORT[order.status_slug] || order.status_name}
           </span>
         </div>
         <div className="board-card-drag" {...listeners}>

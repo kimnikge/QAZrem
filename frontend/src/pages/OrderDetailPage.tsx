@@ -2,15 +2,12 @@ import { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Printer, RefreshCw, Save } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { getOrder, getOrderStatuses, updateOrderStatus, getSettings, getOrderGroups,
+import { getOrder, getOrderStatuses, updateOrderStatus, updateOrder, getSettings, getOrderGroups,
   type OrderDetail, type AvailableStatus, type SettingsData, type OrderGroup } from '../api';
 import { OrderInfoCard } from '../components/OrderInfoCard';
 import { OrderPaymentsCard } from '../components/OrderPaymentsCard';
-
-const statusLabels: Record<string, string> = {
-  new: 'Новая', diagnosis: 'Диагностика', waiting_parts: 'Ожидание запчасти',
-  repair: 'Ремонт', ready: 'Готов к выдаче', completed: 'Выдан', cancelled: 'Отказ'
-};
+import { STATUS_LABELS } from '../constants';
+import { buildOrderPatchBody } from '../utils';
 
 export function OrderDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -49,18 +46,12 @@ export function OrderDetailPage() {
   useEffect(() => { load(); }, [id]);
 
   async function handleSave() {
+    if (!order) return;
     setSaving(true);
     try {
-      const body: Record<string, unknown> = {};
-      if (Math.round(Number(editCost)) !== Math.round(Number(order?.cost))) body.cost = Math.round(Number(editCost));
-      if (Math.round(Number(editDiscount)) !== Math.round(Number(order?.discount))) body.discount = Math.round(Number(editDiscount));
-      if (editDiagnosis !== (order?.diagnosis || '')) body.diagnosis = editDiagnosis;
-      if (editComment !== (order?.internal_comment || '')) body.internal_comment = editComment;
-      if (editGroupId !== (order?.group_id ? String(order.group_id) : '')) body.group_id = editGroupId ? Number(editGroupId) : null;
+      const body = buildOrderPatchBody(order, { editCost, editDiscount, editDiagnosis, editComment, editGroupId });
       if (Object.keys(body).length > 0) {
-        const token = sessionStorage.getItem('token');
-        const apiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
-        await fetch(`${apiUrl}/orders/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(body) });
+        await updateOrder(Number(id), body);
       }
       setEditing(false); await load();
     } catch (err) { setError(err instanceof Error ? err.message : 'Ошибка сохранения'); }
@@ -103,7 +94,7 @@ export function OrderDetailPage() {
             <h3>Смена статуса</h3>
             <div className="status-actions">
               {availableStatuses.map(s => (
-                <button key={s.slug} className="btn-status" onClick={() => handleStatusChange(s.slug)}>{statusLabels[s.slug] || s.name}</button>
+                <button key={s.slug} className="btn-status" onClick={() => handleStatusChange(s.slug)}>{STATUS_LABELS[s.slug] || s.name}</button>
               ))}
             </div>
           </div>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { getOrder, getOrderStatuses, updateOrderStatus, getOrderGroups,
+import { getOrder, getOrderStatuses, updateOrderStatus, updateOrder, getOrderGroups,
   type OrderDetail, type AvailableStatus, type OrderGroup, type Order } from '../api';
+import { buildOrderPatchBody } from '../utils';
 
 interface UseOrderModalProps {
   orderId: number;
@@ -88,22 +89,12 @@ export function useOrderModal({ orderId, preload, onOrderUpdated }: UseOrderModa
     if (!order) return;
     setSaving(true);
     try {
-      const body: Record<string, unknown> = {};
-      if (Math.round(Number(editCost)) !== Math.round(Number(order.cost))) body.cost = Math.round(Number(editCost));
-      if (Math.round(Number(editDiscount)) !== Math.round(Number(order.discount))) body.discount = Math.round(Number(editDiscount));
-      if (editDiagnosis !== (order.diagnosis || '')) body.diagnosis = editDiagnosis;
-      if (editComment !== (order.internal_comment || '')) body.internal_comment = editComment;
-      if (editIssue !== (order.issue_description || '')) body.issue_description = editIssue;
-      if (editGroupId !== (order.group_id ? String(order.group_id) : '')) body.group_id = editGroupId ? Number(editGroupId) : null;
-      if (editClientName !== (order.client_name || '')) body.client_name = editClientName;
-      if (editClientPhone !== (order.client_phone || '')) body.client_phone = editClientPhone;
-      if (editBrand !== (order.brand || '')) body.device_brand = editBrand;
-      if (editModel !== (order.model || '')) body.device_model = editModel;
-      if (editImei !== (order.imei || '')) body.device_imei = editImei;
+      const body = buildOrderPatchBody(order, {
+        editCost, editDiscount, editDiagnosis, editComment, editIssue,
+        editGroupId, editClientName, editClientPhone, editBrand, editModel, editImei,
+      });
       if (Object.keys(body).length > 0) {
-        const token = sessionStorage.getItem('token');
-        const apiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
-        await fetch(`${apiUrl}/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(body) });
+        await updateOrder(orderId, body);
       }
       setEditing(false);
       const [o, s] = await Promise.all([getOrder(orderId), getOrderStatuses(orderId)]);

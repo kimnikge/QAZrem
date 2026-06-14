@@ -176,6 +176,10 @@ export function updateOrderStatus(id: number, status_slug: string, comment?: str
   return request(`/orders/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status_slug, comment }) });
 }
 
+export function updateOrder(id: number, body: Record<string, unknown>) {
+  return request(`/orders/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+}
+
 export function assignPartToOrder(orderId: number, partId: number, quantity: number) {
   return request(`/orders/${orderId}/parts`, { method: 'POST', body: JSON.stringify({ part_id: partId, quantity }) });
 }

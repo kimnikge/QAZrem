@@ -1,22 +1,6 @@
 import { useState } from 'react';
 import { type Order } from '../api';
-
-const statusLabels: Record<string, string> = {
-  new: 'Новый', diagnosis: 'Диагностика', waiting_parts: 'Ожидание',
-  repair: 'Ремонт', ready: 'Готов', completed: 'Выдан', cancelled: 'Отказ'
-};
-
-const statusColors: Record<string, string> = {
-  new: 's-new', diagnosis: 's-diagnosis', waiting_parts: 's-waiting',
-  repair: 's-repair', ready: 's-ready', completed: 's-completed', cancelled: 's-cancelled'
-};
-
-const statusHexColors: Record<string, string> = {
-  new: '#3b82f6', diagnosis: '#f59e0b', waiting_parts: '#8b5cf6',
-  repair: '#f97316', ready: '#22c55e', completed: '#6b7280', cancelled: '#ef4444'
-};
-
-const ALL_STATUSES = ['new', 'diagnosis', 'waiting_parts', 'repair', 'ready', 'completed', 'cancelled'];
+import { ORDER_STATUSES, STATUS_LABELS_SHORT, STATUS_CSS, STATUS_COLORS } from '../constants';
 
 export type ColumnKey = 'id' | 'status' | 'priority' | 'deadline' | 'client' | 'device' | 'issue' | 'master' | 'group' | 'cost';
 
@@ -76,13 +60,13 @@ export function DashboardTable({ orders, compact, colOrder, dragCol, statusDropd
           №{o.id}{o.is_overdue && <span className="ro-overdue-dot" title="Просрочен">!</span>}
         </td>;
       case 'status': {
-        const available = ALL_STATUSES.filter(s => s !== o.status_slug);
+        const available = ORDER_STATUSES.filter(s => s !== o.status_slug);
         const isOpen = statusDropdownId === o.id;
         return <td key={key} style={{ position: 'relative' }}>
           <div className="ro-status-wrap">
-            <span className={`ro-badge ${statusColors[o.status_slug]}${available.length > 0 ? ' clickable' : ''}`}
+            <span className={`ro-badge ${STATUS_CSS[o.status_slug]}${available.length > 0 ? ' clickable' : ''}`}
               onClick={(e) => { e.stopPropagation(); if (available.length > 0) onStatusDropdownChange(isOpen ? null : o.id); }}>
-              {statusLabels[o.status_slug]}{available.length > 0 && <span className="ro-badge-arrow">▾</span>}
+              {STATUS_LABELS_SHORT[o.status_slug]}{available.length > 0 && <span className="ro-badge-arrow">▾</span>}
             </span>
             <span className="ro-meta-line">{o.created_by_name || ''}{o.created_by_name && o.created_at ? ' · ' : ''}{o.created_at ? new Date(o.created_at).toLocaleDateString() : ''}</span>
           </div>
@@ -90,9 +74,9 @@ export function DashboardTable({ orders, compact, colOrder, dragCol, statusDropd
             <div className="status-dropdown" onClick={e => e.stopPropagation()}>
               {available.map(slug => (
                 <button key={slug} className="status-dropdown-item"
-                  style={{ borderLeft: `3px solid ${statusHexColors[slug] || '#6b7280'}` }}
+                  style={{ borderLeft: `3px solid ${STATUS_COLORS[slug] || '#6b7280'}` }}
                   onClick={() => onStatusChange(o.id, slug)}>
-                  <span className="status-dropdown-dot" style={{ background: statusHexColors[slug] || '#6b7280' }} />{statusLabels[slug]}
+                  <span className="status-dropdown-dot" style={{ background: STATUS_COLORS[slug] || '#6b7280' }} />{STATUS_LABELS_SHORT[slug]}
                 </button>))}
             </div>
           )}

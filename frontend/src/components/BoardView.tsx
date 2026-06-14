@@ -3,8 +3,7 @@ import { DndContext, type DragEndEvent, type DragStartEvent, PointerSensor, useS
 import { BoardColumn } from './BoardColumn';
 import { updateOrderStatus } from '../api';
 import type { Order } from '../api';
-
-const BOARD_STATUSES = ['new', 'diagnosis', 'waiting_parts', 'repair', 'ready', 'completed', 'cancelled'];
+import { ORDER_STATUSES } from '../constants';
 
 interface Props {
   orders: Order[];
@@ -43,7 +42,7 @@ export function BoardView({ orders, onOrderUpdated, onCardOpen }: Props) {
     }
   }
 
-  const columns = BOARD_STATUSES.map(status => ({
+  const columns = ORDER_STATUSES.map(status => ({
     status,
     orders: orders.filter(o => o.status_slug === status)
   }));

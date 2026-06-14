@@ -1,9 +1,5 @@
 import type { OrderDetail, OrderGroup } from '../api';
-
-const statusLabels: Record<string, string> = {
-  new: 'Новая', diagnosis: 'Диагностика', waiting_parts: 'Ожидание запчасти',
-  repair: 'Ремонт', ready: 'Готов к выдаче', completed: 'Выдан', cancelled: 'Отказ'
-};
+import { STATUS_LABELS } from '../constants';
 
 interface Props {
   order: OrderDetail;
@@ -30,7 +26,7 @@ export function OrderInfoCard({ order, editing, editCost, onEditCost, editDiscou
       <div className="detail-row"><span>Телефон</span><strong>{order.client_phone}</strong></div>
       <div className="detail-row"><span>Устройство</span><strong>{order.brand} {order.model}</strong></div>
       <div className="detail-row"><span>IMEI</span><code>{order.imei}</code></div>
-      <div className="detail-row"><span>Статус</span><strong>{statusLabels[order.status_slug]}</strong></div>
+      <div className="detail-row"><span>Статус</span><strong>{STATUS_LABELS[order.status_slug]}</strong></div>
       <div className="detail-row"><span>Мастер</span><strong>{order.master_name || '—'}</strong></div>
       <div className="detail-row"><span>Локация</span><strong>{order.location_name || '—'}</strong></div>
       <div className="detail-row">

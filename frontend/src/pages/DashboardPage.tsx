@@ -6,6 +6,7 @@ import { BoardView } from '../components/BoardView';
 import { OrderModal } from '../components/OrderModal';
 import { DashboardTable, loadColumnOrder, type ColumnKey } from '../components/DashboardTable';
 import { LayoutList, Kanban, Download, RotateCcw, Maximize2, Minimize2 } from 'lucide-react';
+import { STATUS_LABELS } from '../constants';
 
 const apiUrl = import.meta.env.VITE_API_URL || '/api';
 
@@ -15,11 +16,6 @@ function downloadCsv(url: string, filename: string) {
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename; a.click();
   }).catch(console.error);
 }
-
-const statusLabels: Record<string, string> = {
-  new: 'Новая', diagnosis: 'Диагностика', waiting_parts: 'Ожидание запчасти',
-  repair: 'Ремонт', ready: 'Готов к выдаче', completed: 'Выдан', cancelled: 'Отказ'
-};
 
 const statusMap: Record<string, string | undefined> = {
   active: undefined, new: 'new', diagnosis: 'diagnosis', waiting_parts: 'waiting_parts',
@@ -61,7 +57,7 @@ export function DashboardPage() {
   async function handleQuickStatusChange(orderId: number, slug: string) {
     try {
       await updateOrderStatus(orderId, slug);
-      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status_slug: slug, status_name: statusLabels[slug] || slug } : o));
+      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status_slug: slug, status_name: STATUS_LABELS[slug] || slug } : o));
       setStatusDropdownId(null);
     } catch (err) { console.error('Ошибка смены статуса:', err); }
   }

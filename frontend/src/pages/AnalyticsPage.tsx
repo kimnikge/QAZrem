@@ -1,13 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getOrders, getFinanceReport, getAllUsers, type Order, type FinanceReport } from '../api';
+import { STATUS_LABELS_SHORT } from '../constants';
 
 const palette = ['#1a4fba','#137333','#b45309','#6b21a8','#c5221f','#038a8a','#e37400','#1a73e8'];
-
-const statusLabels: Record<string, string> = {
-  new: 'Новая', diagnosis: 'Диагностика', waiting_parts: 'Ожидание',
-  repair: 'Ремонт', ready: 'Готов', completed: 'Выдан', cancelled: 'Отказ'
-};
 
 export function AnalyticsPage() {
   const navigate = useNavigate();
@@ -184,7 +180,7 @@ export function AnalyticsPage() {
                 >
                   <td className="ro-cell-id">#{o.id}</td>
                   <td style={m ? { color: m.color, fontWeight: 500 } : {}}>{m?.name || '—'}</td>
-                  <td><span className={`ro-badge s-${o.status_slug}`}>{statusLabels[o.status_slug]}</span></td>
+                  <td><span className={`ro-badge s-${o.status_slug}`}>{STATUS_LABELS_SHORT[o.status_slug]}</span></td>
                   <td>{o.priority !== 'normal' && <span className={`ro-priority ${o.priority}`}>{o.priority === 'urgent' ? 'Срочно' : 'Критично'}</span>}</td>
                   <td className="ro-cell-client"><strong>{o.client_name}</strong><span>{o.client_phone}</span></td>
                   <td>{o.brand} {o.model}</td>

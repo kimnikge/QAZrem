@@ -1,20 +1,5 @@
 import type { CreateOrderInput, Location } from '../api';
-
-const priorities = [
-  { value: 'normal', label: 'Обычный' },
-  { value: 'urgent', label: 'Срочный' },
-  { value: 'critical', label: 'Критичный' },
-];
-
-const sources = [
-  { value: 'звонок', label: 'Звонок' },
-  { value: 'сайт', label: 'Сайт' },
-  { value: 'instagram', label: 'Instagram' },
-  { value: '2gis', label: '2GIS' },
-  { value: 'реклама', label: 'Реклама' },
-  { value: 'постоянный', label: 'Постоянный клиент' },
-  { value: 'другое', label: 'Другое' },
-];
+import { PRIORITIES, SOURCES } from '../constants';
 
 interface Props {
   form: CreateOrderInput;
@@ -40,14 +25,14 @@ export function OrderParamsCard({ form, setForm, masters, locations }: Props) {
         <div>
           <label className="glass-label">Приоритет</label>
           <select className="glass-select" value={form.priority || 'normal'} onChange={e => setForm(prev => ({ ...prev, priority: e.target.value as CreateOrderInput['priority'] }))}>
-            {priorities.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+            {PRIORITIES.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
           </select>
         </div>
         <div>
           <label className="glass-label">Откуда пришёл *</label>
           <select className="glass-select" value={form.source || ''} onChange={e => setForm(prev => ({ ...prev, source: e.target.value }))} required>
             <option value="" disabled>— Выберите —</option>
-            {sources.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+            {SOURCES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
           </select>
         </div>
       </div>

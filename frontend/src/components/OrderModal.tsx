@@ -3,11 +3,7 @@ import { X, Printer, Edit3, Save, Loader2 } from 'lucide-react';
 import { type Order } from '../api';
 import { useOrderModal } from '../hooks/useOrderModal';
 import { OrderPartsSection } from './OrderPartsSection';
-
-const statusLabels: Record<string, string> = {
-  new: 'Новая', diagnosis: 'Диагностика', waiting_parts: 'Ожидание запчасти',
-  repair: 'Ремонт', ready: 'Готов к выдаче', completed: 'Выдан', cancelled: 'Отказ'
-};
+import { STATUS_LABELS } from '../constants';
 
 interface Props { orderId: number; preload?: Order; onClose: () => void; onOrderUpdated?: () => void; }
 
@@ -32,7 +28,7 @@ export function OrderModal({ orderId, preload, onClose, onOrderUpdated }: Props)
           <div className="modal-header">
             <div className="modal-header-left">
               <span className="modal-order-id">Заказ №{order.id}</span>
-              <span className={`modal-status-badge status-${order.status_slug}`}>{statusLabels[order.status_slug]}</span>
+              <span className={`modal-status-badge status-${order.status_slug}`}>{STATUS_LABELS[order.status_slug]}</span>
               {order.priority !== 'normal' && <span className={`modal-priority ${order.priority}`}>{order.priority === 'urgent' ? '⚡ Срочно' : '🔥 Критично'}</span>}
             </div>
             <div className="modal-header-right">
@@ -105,7 +101,7 @@ export function OrderModal({ orderId, preload, onClose, onOrderUpdated }: Props)
           </div>
 
           {m.statuses.length > 0 && (
-            <div className="modal-footer">{m.statuses.map(s => <button key={s.slug} className="btn-status" onClick={() => m.handleStatus(s.slug)}>{statusLabels[s.slug] || s.name}</button>)}</div>
+            <div className="modal-footer">{m.statuses.map(s => <button key={s.slug} className="btn-status" onClick={() => m.handleStatus(s.slug)}>{STATUS_LABELS[s.slug] || s.name}</button>)}</div>
           )}
         </>) : null}
       </div>

@@ -48,7 +48,6 @@ export function useOrderAutocomplete() {
 
   function handleCatalogInput(field: 'brand' | 'model', value: string) {
     if (catalogTimer.current) clearTimeout(catalogTimer.current);
-    if (value.length < 2) { setShowCatalog(false); return; }
     catalogTimer.current = setTimeout(async () => {
       try {
         const res = await searchDeviceCatalog(value);

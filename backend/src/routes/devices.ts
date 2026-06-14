@@ -23,7 +23,11 @@ devicesRouter.get('/catalog', async (req, res, next) => {
   try {
     const q = (req.query.q as string || '').trim();
     if (!q || q.length < 2) {
-      res.json([]);
+      // Пустой запрос — возвращаем все уникальные бренды
+      const result = await pool.query(
+        `SELECT DISTINCT brand, '' as model FROM device_catalog ORDER BY brand LIMIT 50`
+      );
+      res.json(result.rows);
       return;
     }
     const result = await pool.query(

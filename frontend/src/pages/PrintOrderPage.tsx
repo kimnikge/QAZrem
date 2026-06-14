@@ -1,15 +1,35 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
-import { getOrder, type OrderDetail } from '../api';
+import { useParams, useSearchParams } from 'react-router-dom';
+import { getOrder, previewPrintTemplate, getPrintTemplates, type OrderDetail, type PrintTemplateListItem } from '../api';
 
 export function PrintOrderPage() {
   const { id } = useParams<{ id: string }>();
+  const [searchParams] = useSearchParams();
   const [order, setOrder] = useState<OrderDetail | null>(null);
+  const [html, setHtml] = useState('');
+  const [templates, setTemplates] = useState<PrintTemplateListItem[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<number | undefined>(
+    searchParams.get('templateId') ? Number(searchParams.get('templateId')) : undefined
+  );
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!id) return;
-    getOrder(Math.round(Number(id))).then(setOrder).catch(console.error).finally(() => setLoading(false));
+    const orderId = Math.round(Number(id));
+
+    Promise.all([
+      getOrder(orderId),
+      getPrintTemplates().catch(() => [] as PrintTemplateListItem[]),
+    ]).then(([o, t]) => {
+      setOrder(o);
+      setTemplates(t);
+
+      // Если не выбран шаблон — берём дефолтный
+      const tplId = selectedTemplateId || t.find(tp => tp.is_default)?.id;
+      return previewPrintTemplate(orderId, tplId);
+    }).then(res => {
+      if (res) setHtml(res.html);
+    }).catch(console.error).finally(() => setLoading(false));
   }, [id]);
 
   useEffect(() => {
@@ -32,13 +52,22 @@ export function PrintOrderPage() {
   if (loading) return <div className="loading">Загрузка...</div>;
   if (!order) return <div className="error-message">Заказ не найден</div>;
 
-  const finalCost = Math.max(0, Math.round(Number(order.cost)) - Math.round(Number(order.discount)));
+  async function handleTemplateChange(tplId: number | undefined) {
+    setSelectedTemplateId(tplId);
+    try {
+      const orderId = Math.round(Number(id));
+      const res = await previewPrintTemplate(orderId, tplId);
+      setHtml(res.html);
+    } catch (err) {
+      console.error(err);
+    }
+  }
 
   return (
     <div className="print-page">
       <style>{`
         @media print {
-          body { margin: 0; padding: 20px; font-family: 'Courier New', monospace; font-size: 12px; }
+          body { margin: 0; padding: 20px; font-family: Arial, sans-serif; font-size: 12px; }
           .no-print { display: none !important; }
           @page { margin: 15mm; }
           table { width: 100%; border-collapse: collapse; }
@@ -47,80 +76,24 @@ export function PrintOrderPage() {
       `}</style>
 
       <div className="no-print" style={{ padding: 16, textAlign: 'center' }}>
+        {templates.length > 0 && (
+          <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+            <span style={{ fontSize: 13, color: '#5f6368' }}>Шаблон:</span>
+            <select value={selectedTemplateId || ''} onChange={e => handleTemplateChange(e.target.value ? Number(e.target.value) : undefined)}
+              style={{ padding: '6px 10px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 13 }}>
+              <option value="">По умолчанию</option>
+              {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+          </div>
+        )}
         <button onClick={() => window.print()} className="btn-primary" style={{ fontSize: 16, padding: '12px 24px' }}>
           🖨️ Печать
         </button>
         <p style={{ marginTop: 8, color: '#5f6368', fontSize: 13 }}>Или нажмите Cmd+P (Ctrl+P)</p>
       </div>
 
-      <div style={{ maxWidth: 800, margin: '0 auto', padding: 20 }}>
-        <div style={{ textAlign: 'center', marginBottom: 24 }}>
-          <h1 style={{ fontSize: 18, margin: 0 }}>АКТ ПРИЁМА-ПЕРЕДАЧИ №{order.id}</h1>
-          <p style={{ fontSize: 11, color: '#666' }}>от {new Date(order.created_at).toLocaleDateString()}</p>
-        </div>
-
-        <table>
-          <tbody>
-            <tr><td style={{ width: 200 }}><strong>Клиент</strong></td><td>{order.client_name}</td></tr>
-            <tr><td><strong>Телефон</strong></td><td>{order.client_phone}</td></tr>
-            <tr><td><strong>Устройство</strong></td><td>{order.brand} {order.model}</td></tr>
-            <tr><td><strong>IMEI</strong></td><td><code>{order.imei}</code></td></tr>
-            <tr><td><strong>Статус</strong></td><td>{statusLabels[order.status_slug]}</td></tr>
-            {order.master_name && <tr><td><strong>Мастер</strong></td><td>{order.master_name}</td></tr>}
-          </tbody>
-        </table>
-
-        <div style={{ marginTop: 16 }}>
-          <h3 style={{ fontSize: 14 }}>Описание проблемы:</h3>
-          <p style={{ fontSize: 12 }}>{order.issue_description}</p>
-        </div>
-
-        {order.diagnosis && (
-          <div style={{ marginTop: 12 }}>
-            <h3 style={{ fontSize: 14 }}>Диагноз:</h3>
-            <p style={{ fontSize: 12 }}>{order.diagnosis}</p>
-          </div>
-        )}
-
-        {order.parts.length > 0 && (
-          <div style={{ marginTop: 16 }}>
-            <h3 style={{ fontSize: 14 }}>Запчасти:</h3>
-            <table>
-              <thead><tr><th>Наименование</th><th>Кол-во</th><th>Цена</th></tr></thead>
-              <tbody>
-                {order.parts.map(p => (
-                  <tr key={p.id}>
-                    <td>{p.part_name}</td>
-                    <td>{p.quantity_used}</td>
-                    <td>{Math.round(Number(p.selling_price_at_moment))} ₸</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        <div style={{ marginTop: 16, textAlign: 'right' }}>
-          <table style={{ width: 'auto', marginLeft: 'auto' }}>
-            <tbody>
-              <tr><td><strong>Стоимость</strong></td><td>{Math.round(Number(order.cost))} ₸</td></tr>
-              {Math.round(Number(order.discount)) > 0 && <tr><td><strong>Скидка</strong></td><td>−{Math.round(Number(order.discount))} ₸</td></tr>}
-              <tr><td><strong>Итого</strong></td><td><strong>{finalCost} ₸</strong></td></tr>
-              <tr><td><strong>Предоплата</strong></td><td>{Math.round(Number(order.prepaid))} ₸</td></tr>
-              <tr><td><strong>К оплате</strong></td><td><strong>{(finalCost - Math.round(Number(order.prepaid)))} ₸</strong></td></tr>
-            </tbody>
-          </table>
-        </div>
-
-        <div style={{ marginTop: 32, display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
-          <div>Клиент: ___________________</div>
-          <div>Мастер: ___________________</div>
-        </div>
-
-        <p style={{ marginTop: 24, fontSize: 10, color: '#999', textAlign: 'center' }}>
-          Документ создан автоматически в QAZRem CRM
-        </p>
-      </div>
+      <div style={{ maxWidth: 800, margin: '0 auto', padding: 20 }}
+        dangerouslySetInnerHTML={{ __html: html || '<p style="text-align:center;color:#999">Загрузка шаблона...</p>' }} />
     </div>
   );
 }

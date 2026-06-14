@@ -7,10 +7,13 @@ import {
   createUser, updateUser, deleteUser,
   getOrderGroups, createOrderGroup, updateOrderGroup, deleteOrderGroup,
   getLocations, createLocation, updateLocation, deleteLocation,
-  type SettingsData, type UserCreateInput, type UserUpdateInput, type OrderGroup, type Location
+  getPrintTemplates, getPrintTemplate, getTemplateVariables,
+  createPrintTemplate, updatePrintTemplate, deletePrintTemplate,
+  type SettingsData, type UserCreateInput, type UserUpdateInput, type OrderGroup, type Location,
+  type PrintTemplateListItem, type TemplateVariable
 } from '../api';
 
-type Tab = 'users' | 'statuses' | 'payments' | 'expenses' | 'groups' | 'locations';
+type Tab = 'users' | 'statuses' | 'payments' | 'expenses' | 'groups' | 'locations' | 'templates';
 
 const roleLabels: Record<string, string> = {
   admin: 'Админ',
@@ -136,6 +139,141 @@ function UserFormModal({ mode, initial, onClose, onSaved }: UserFormModalProps) 
 }
 
 // ============================================================
+// Модалка редактирования шаблона печати
+// ============================================================
+type PrintTemplateModalProps = {
+  mode: 'create' | 'edit';
+  templateId?: number;
+  onClose: () => void;
+  onSaved: () => void;
+};
+
+function PrintTemplateModal({ mode, templateId, onClose, onSaved }: PrintTemplateModalProps) {
+  const [name, setName] = useState('');
+  const [content, setContent] = useState('');
+  const [isDefault, setIsDefault] = useState(false);
+  const [variables, setVariables] = useState<TemplateVariable[]>([]);
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(mode === 'edit');
+
+  useEffect(() => {
+    getTemplateVariables().then(setVariables).catch(() => {});
+    if (mode === 'edit' && templateId) {
+      getPrintTemplate(templateId).then(t => {
+        setName(t.name);
+        setContent(t.content);
+        setIsDefault(t.is_default);
+      }).catch(err => setError(err.message)).finally(() => setLoading(false));
+    }
+  }, [mode, templateId]);
+
+  const groupedVars: Record<string, TemplateVariable[]> = {};
+  for (const v of variables) {
+    if (!groupedVars[v.group]) groupedVars[v.group] = [];
+    groupedVars[v.group].push(v);
+  }
+
+  function insertVariable(key: string) {
+    setContent(prev => prev + key);
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError('');
+    setSaving(true);
+    try {
+      if (mode === 'create') {
+        await createPrintTemplate({ name, content, is_default: isDefault });
+      } else if (templateId) {
+        await updatePrintTemplate(templateId, { name, content, is_default: isDefault });
+      }
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Ошибка сохранения');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={onClose}>
+      <div style={{ background: '#fff', borderRadius: 12, padding: 28 }}>Загрузка...</div>
+    </div>
+  );
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={onClose}>
+      <form onSubmit={handleSubmit} onClick={e => e.stopPropagation()} style={{
+        background: '#fff', borderRadius: 12, padding: 28, width: 900, maxHeight: '90vh', overflow: 'auto',
+        display: 'flex', flexDirection: 'column', gap: 14, boxShadow: '0 8px 32px rgba(0,0,0,0.2)'
+      }}>
+        <h3 style={{ margin: 0 }}>{mode === 'create' ? 'Новый шаблон' : 'Редактировать шаблон'}</h3>
+        {error && <div className="error-message">{error}</div>}
+        <div style={{ display: 'flex', gap: 12 }}>
+          <div style={{ flex: 1 }}>
+            <label style={{ fontSize: 12, color: '#5f6368', display: 'block', marginBottom: 4 }}>Название</label>
+            <input value={name} onChange={e => setName(e.target.value)} required
+              style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14 }} />
+          </div>
+          <div style={{ display: 'flex', alignItems: 'end', gap: 8 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+              <input type="checkbox" checked={isDefault} onChange={e => setIsDefault(e.target.checked)} />
+              По умолчанию
+            </label>
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 12, flex: 1, minHeight: 300 }}>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+            <label style={{ fontSize: 12, color: '#5f6368', display: 'block', marginBottom: 4 }}>HTML-шаблон</label>
+            <textarea value={content} onChange={e => setContent(e.target.value)}
+              style={{
+                flex: 1, padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 6,
+                fontSize: 13, fontFamily: 'monospace', resize: 'vertical', minHeight: 300, lineHeight: 1.5
+              }}
+              placeholder="<div>АКТ №#ЗАКАЗ-НОМЕР</div>..."
+            />
+          </div>
+          <div style={{ width: 240, flexShrink: 0 }}>
+            <div style={{ fontSize: 12, color: '#5f6368', marginBottom: 8, fontWeight: 600 }}>Переменные</div>
+            <div style={{ border: '1px solid var(--border)', borderRadius: 6, padding: 8, maxHeight: 400, overflow: 'auto', background: '#f8f9fa' }}>
+              {Object.entries(groupedVars).map(([group, vars]) => (
+                <div key={group} style={{ marginBottom: 10 }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: '#5f6368', marginBottom: 4, textTransform: 'uppercase' }}>{group}</div>
+                  {vars.map(v => (
+                    <button key={v.key} type="button" onClick={() => insertVariable(v.key)} title={v.label}
+                      style={{
+                        display: 'block', width: '100%', textAlign: 'left', padding: '4px 8px',
+                        border: 'none', borderRadius: 4, background: 'transparent', cursor: 'pointer',
+                        fontSize: 12, fontFamily: 'monospace', color: '#1a73e8', marginBottom: 2
+                      }}
+                      onMouseEnter={e => (e.currentTarget.style.background = '#e8f0fe')}
+                      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                    >{v.key}</button>
+                  ))}
+                </div>
+              ))}
+            </div>
+            <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>Нажмите на переменную, чтобы вставить в шаблон</div>
+          </div>
+        </div>
+        <details style={{ fontSize: 13 }}>
+          <summary style={{ cursor: 'pointer', color: '#5f6368', fontWeight: 500 }}>Предпросмотр (разметка с подсвеченными переменными)</summary>
+          <div style={{ marginTop: 8, border: '1px dashed #ccc', borderRadius: 6, padding: 16, fontSize: 12, background: '#fafafa', lineHeight: 1.6 }}
+            dangerouslySetInnerHTML={{ __html: content.replace(/#[А-ЯA-Z-]+/g, '<span style="background:#e8f0fe;padding:1px 4px;border-radius:3px;font-family:monospace">$&</span>') }} />
+        </details>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'end', marginTop: 8 }}>
+          <button type="button" className="btn-secondary" onClick={onClose}>Отмена</button>
+          <button type="submit" className="btn-primary" disabled={saving}>
+            {saving ? 'Сохранение...' : mode === 'create' ? 'Создать' : 'Сохранить'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+// ============================================================
 // Основная страница
 // ============================================================
 export function SettingsPage() {
@@ -168,6 +306,11 @@ export function SettingsPage() {
   const [userModal, setUserModal] = useState<{ mode: 'create' } | { mode: 'edit'; user: SettingsData['users'][0] } | null>(null);
   const [deletingUserId, setDeletingUserId] = useState<number | null>(null);
 
+  // Templates
+  const [templates, setTemplates] = useState<PrintTemplateListItem[]>([]);
+  const [templateModal, setTemplateModal] = useState<{ mode: 'create' } | { mode: 'edit'; id: number } | null>(null);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+
   async function load() {
     setLoading(true);
     setError('');
@@ -182,6 +325,17 @@ export function SettingsPage() {
   }
 
   useEffect(() => { load(); loadGroups(); loadLocations(); }, []);
+
+  async function loadTemplates() {
+    setTemplatesLoading(true);
+    try {
+      setTemplates(await getPrintTemplates());
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setTemplatesLoading(false);
+    }
+  }
 
   async function loadGroups() {
     try {
@@ -326,6 +480,7 @@ export function SettingsPage() {
     { key: 'statuses', label: 'Статусы заказов' },
     { key: 'groups', label: 'Группы заказов' },
     { key: 'locations', label: 'Локации' },
+    { key: 'templates', label: 'Шаблоны печати' },
     { key: 'payments', label: 'Способы оплаты' },
     { key: 'expenses', label: 'Категории расходов' },
   ];
@@ -531,6 +686,61 @@ export function SettingsPage() {
           )}
 
           {/* ============================================================ */}
+          {/* Вкладка: Шаблоны печати (только admin) */}
+          {/* ============================================================ */}
+          {tab === 'templates' && (
+            <div>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+                <button className="ro-btn-primary" onClick={() => { loadTemplates(); setTemplateModal({ mode: 'create' }); }}>
+                  + Новый шаблон
+                </button>
+              </div>
+
+              {templatesLoading ? <div className="loading">Загрузка...</div> : (
+                <div className="ro-table-wrap">
+                  <table className="ro-table">
+                    <thead>
+                      <tr>
+                        <th>ID</th>
+                        <th>Название</th>
+                        <th>По умолчанию</th>
+                        <th>Обновлён</th>
+                        <th style={{ width: 120 }}></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {templates.map(t => (
+                        <tr key={t.id}>
+                          <td>{t.id}</td>
+                          <td><strong>{t.name}</strong></td>
+                          <td>{t.is_default ? '✅' : '—'}</td>
+                          <td className="ro-cell-date">{new Date(t.updated_at).toLocaleDateString()}</td>
+                          <td>
+                            <div style={{ display: 'flex', gap: 6 }}>
+                              <button className="btn-status" onClick={() => setTemplateModal({ mode: 'edit', id: t.id })}
+                                title="Редактировать">✏️</button>
+                              <button className="btn-status" onClick={async () => {
+                                if (!confirm(`Удалить шаблон "${t.name}"?`)) return;
+                                try { await deletePrintTemplate(t.id); loadTemplates(); }
+                                catch (err) { setError(err instanceof Error ? err.message : 'Ошибка'); }
+                              }} style={{ color: '#ef4444' }} title="Удалить">✕</button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                      {templates.length === 0 && (
+                        <tr><td colSpan={5} style={{ textAlign: 'center', color: '#9ca3af', padding: 24 }}>
+                          Нет шаблонов. Создайте первый шаблон для печати квитанций.
+                        </td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ============================================================ */}
           {/* Вкладка: Способы оплаты */}
           {/* ============================================================ */}
           {tab === 'payments' && (
@@ -681,6 +891,15 @@ export function SettingsPage() {
           initial={userModal.mode === 'edit' ? userModal.user : undefined}
           onClose={() => setUserModal(null)}
           onSaved={() => { setUserModal(null); load(); }}
+        />
+      )}
+
+      {templateModal && (
+        <PrintTemplateModal
+          mode={templateModal.mode}
+          templateId={templateModal.mode === 'edit' ? templateModal.id : undefined}
+          onClose={() => setTemplateModal(null)}
+          onSaved={() => { setTemplateModal(null); loadTemplates(); }}
         />
       )}
     </div>

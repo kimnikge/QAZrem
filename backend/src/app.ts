@@ -19,6 +19,7 @@ import { ordersRouter } from './routes/orders.js';
 import { orderGroupsRouter } from './routes/order-groups.js';
 import { partsRouter } from './routes/parts.js';
 import { paymentsRouter } from './routes/payments.js';
+import { printTemplatesRouter } from './routes/print-templates.js';
 import { searchRouter } from './routes/search.js';
 import { servicesRouter } from './routes/services.js';
 import { settingsRouter } from './routes/settings.js';
@@ -89,6 +90,7 @@ app.use('/payments', paymentsRouter);
 app.use('/expenses', expensesRouter);
 app.use('/finance', financeRouter);
 app.use('/settings', settingsRouter);
+app.use('/print-templates', printTemplatesRouter);
 app.use('/users', usersRouter);
 
 // Централизованная обработка ошибок

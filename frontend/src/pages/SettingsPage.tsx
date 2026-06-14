@@ -364,6 +364,7 @@ export function SettingsPage() {
                       <th>ID</th>
                       <th>Имя</th>
                       <th>Логин</th>
+                      <th>Пароль</th>
                       <th>Роль</th>
                       <th>Комиссия</th>
                       <th>Создан</th>
@@ -379,6 +380,11 @@ export function SettingsPage() {
                           {u.id === currentUser?.id && <span style={{ fontSize: 11, color: '#5f6368', marginLeft: 6 }}>(вы)</span>}
                         </td>
                         <td>{u.login}</td>
+                        <td>
+                          <span style={{ color: '#9ca3af', letterSpacing: 2, userSelect: 'none' }} title="Пароль хранится в зашифрованном виде">
+                            ••••••••
+                          </span>
+                        </td>
                         <td>
                           <span className={`ro-badge ${u.role === 'admin' ? 's-ready' : u.role === 'master' ? 's-diagnosis' : 's-new'}`}>
                             {roleLabels[u.role] || u.role}

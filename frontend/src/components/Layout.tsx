@@ -11,7 +11,7 @@ const navItems = [
   { to: '/services', icon: Wrench, label: 'Услуги' },
   { to: '/finance', icon: TrendingUp, label: 'Финансы' },
   { to: '/analytics', icon: BarChart3, label: 'Аналитика' },
-  { to: '/settings', icon: Settings, label: 'Настройки' },
+  { to: '/settings', icon: Settings, label: 'Настройки', adminOnly: true },
 ];
 
 export function Layout() {
@@ -40,7 +40,7 @@ export function Layout() {
           <span className="sidebar-role">{user?.role === 'admin' ? 'Админ' : user?.role === 'master' ? 'Мастер' : 'Приёмщик'}</span>
         </div>
         <nav className="sidebar-nav">
-          {navItems.map(({ to, icon: Icon, label }) => (
+          {navItems.filter(item => !item.adminOnly || user?.role === 'admin').map(({ to, icon: Icon, label }) => (
             <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
               <Icon size={20} />
               <span>{label}</span>

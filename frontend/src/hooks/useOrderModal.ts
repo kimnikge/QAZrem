@@ -29,6 +29,7 @@ export function useOrderModal({ orderId, preload, onOrderUpdated }: UseOrderModa
   const [editBrand, setEditBrand] = useState(preload?.brand || '');
   const [editModel, setEditModel] = useState(preload?.model || '');
   const [editImei, setEditImei] = useState(preload?.imei || '');
+  const [editSerialNumber, setEditSerialNumber] = useState(preload?.serial_number || '');
   const [editIssue, setEditIssue] = useState(preload?.issue_description || '');
 
   // Preload order
@@ -46,6 +47,7 @@ export function useOrderModal({ orderId, preload, onOrderUpdated }: UseOrderModa
     setEditBrand(o.brand || '');
     setEditModel(o.model || '');
     setEditImei(o.imei || '');
+    setEditSerialNumber(o.serial_number || '');
     setEditIssue(o.issue_description || '');
   }
 
@@ -91,7 +93,7 @@ export function useOrderModal({ orderId, preload, onOrderUpdated }: UseOrderModa
     try {
       const body = buildOrderPatchBody(order, {
         editCost, editDiscount, editDiagnosis, editComment, editIssue,
-        editGroupId, editClientName, editClientPhone, editBrand, editModel, editImei,
+        editGroupId, editClientName, editClientPhone, editBrand, editModel, editImei, editSerialNumber,
       });
       if (Object.keys(body).length > 0) {
         await updateOrder(orderId, body);
@@ -117,6 +119,7 @@ export function useOrderModal({ orderId, preload, onOrderUpdated }: UseOrderModa
     editGroupId, setEditGroupId, editClientName, setEditClientName,
     editClientPhone, setEditClientPhone, editBrand, setEditBrand,
     editModel, setEditModel, editImei, setEditImei, editIssue, setEditIssue,
+    editSerialNumber, setEditSerialNumber,
     handleStatus, handleSave, refresh, setError
   };
 }

@@ -187,7 +187,7 @@ ordersRouter.get('/export', requireRole('admin'), async (req, res, next) => {
         o.id, os.name AS status, o.priority,
         TO_CHAR(o.deadline, 'DD.MM.YYYY') AS deadline,
         c.name AS client, c.phone,
-        d.brand || ' ' || d.model AS device, d.imei,
+        d.brand || ' ' || d.model AS device, d.imei, d.serial_number,
         o.issue_description, o.cost, o.discount,
         (o.cost - o.discount) AS total,
         og.name AS "group",
@@ -220,7 +220,7 @@ ordersRouter.get('/export', requireRole('admin'), async (req, res, next) => {
     const result = await pool.query(sql, params);
 
     // CSV: разделитель ; для Excel в русской локали
-    const headers = ['№', 'Статус', 'Приоритет', 'Срок', 'Клиент', 'Телефон', 'Устройство', 'IMEI', 'Проблема', 'Стоимость', 'Скидка', 'Итого', 'Группа', 'Создан'];
+    const headers = ['№', 'Статус', 'Приоритет', 'Срок', 'Клиент', 'Телефон', 'Устройство', 'IMEI', 'Серийный номер', 'Проблема', 'Стоимость', 'Скидка', 'Итого', 'Группа', 'Создан'];
     const csvRows = [headers.join(';')];
 
     for (const row of result.rows) {
@@ -233,6 +233,7 @@ ordersRouter.get('/export', requireRole('admin'), async (req, res, next) => {
         row.phone || '',
         `"${(row.device || '').replace(/"/g, '""')}"`,
         row.imei || '',
+        row.serial_number || '',
         `"${(row.issue_description || '').replace(/"/g, '""')}"`,
         row.cost,
         row.discount,
@@ -382,7 +383,8 @@ const updateOrderSchema = z.object({
   // Device fields
   device_brand: z.string().min(1).optional(),
   device_model: z.string().min(1).optional(),
-  device_imei: z.string().min(10).optional()
+  device_imei: z.string().min(10).optional(),
+  device_serial_number: z.string().optional().or(z.literal(''))
 });
 
 ordersRouter.patch('/:id', requireRole('admin', 'master'), async (req, res, next) => {
@@ -431,7 +433,8 @@ ordersRouter.patch('/:id', requireRole('admin', 'master'), async (req, res, next
     const deviceFieldMap: Record<string, string> = {
       device_brand: 'brand',
       device_model: 'model',
-      device_imei: 'imei'
+      device_imei: 'imei',
+      device_serial_number: 'serial_number'
     };
     const deviceFields: string[] = [];
     const deviceValues: unknown[] = [];

@@ -51,7 +51,7 @@ devicesRouter.get('/search-imei', async (req, res, next) => {
       return;
     }
     const result = await pool.query(
-      `SELECT d.id AS device_id, d.brand, d.model, d.imei,
+      `SELECT d.id AS device_id, d.brand, d.model, d.imei, d.serial_number,
               c.id AS client_id, c.name AS client_name, c.phone AS client_phone
        FROM devices d
        JOIN clients c ON c.id = d.client_id
@@ -60,6 +60,60 @@ devicesRouter.get('/search-imei', async (req, res, next) => {
       [`%${last4}`]
     );
     res.json(result.rows);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /devices/by-serial/:serial — поиск устройства по серийному номеру
+// Возвращает устройство + полную историю заказов (все ремонты, все клиенты)
+devicesRouter.get('/by-serial/:serial', async (req, res, next) => {
+  try {
+    const { serial } = req.params;
+    if (!serial || serial.trim().length < 2) {
+      res.json(null);
+      return;
+    }
+
+    // Ищем устройство по точному совпадению серийного номера
+    const deviceResult = await pool.query(
+      `SELECT d.id, d.client_id, d.brand, d.model, d.imei, d.serial_number, d.color, d.notes, d.created_at,
+              c.name AS client_name, c.phone AS client_phone
+       FROM devices d
+       JOIN clients c ON c.id = d.client_id
+       WHERE d.serial_number = $1`,
+      [serial.trim()]
+    );
+
+    if (deviceResult.rows.length === 0) {
+      res.json(null);
+      return;
+    }
+
+    const device = deviceResult.rows[0];
+
+    // Получаем ВСЕ заказы этого устройства (история ремонтов)
+    const ordersResult = await pool.query(
+      `SELECT o.id, o.issue_description, o.diagnosis, o.cost, o.discount,
+              o.created_at, o.completed_at,
+              os.name AS status_name, os.slug AS status_slug,
+              c2.name AS order_client_name, c2.phone AS order_client_phone,
+              l.name AS location_name
+       FROM orders o
+       JOIN order_statuses os ON os.id = o.status_id
+       JOIN devices d2 ON d2.id = o.device_id
+       JOIN clients c2 ON c2.id = d2.client_id
+       LEFT JOIN locations l ON l.id = o.location_id
+       WHERE d2.serial_number = $1
+       ORDER BY o.created_at DESC`,
+      [serial.trim()]
+    );
+
+    res.json({
+      device,
+      orders: ordersResult.rows,
+      total_repairs: ordersResult.rows.length
+    });
   } catch (error) {
     next(error);
   }

@@ -13,6 +13,7 @@ export interface OrderEditFields {
   editBrand: string;
   editModel: string;
   editImei: string;
+  editSerialNumber: string;
 }
 
 /**
@@ -47,6 +48,8 @@ export function buildOrderPatchBody(
     body.device_model = fields.editModel;
   if (fields.editImei !== undefined && fields.editImei !== (order.imei || ''))
     body.device_imei = fields.editImei;
+  if (fields.editSerialNumber !== undefined && fields.editSerialNumber !== (order.serial_number || ''))
+    body.device_serial_number = fields.editSerialNumber || null;
 
   return body;
 }

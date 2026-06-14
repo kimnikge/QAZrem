@@ -56,6 +56,10 @@ export function OrderModal({ orderId, preload, onClose, onOrderUpdated }: Props)
                 {m.editing ? <input value={m.editModel} onChange={e => m.setEditModel(e.target.value)} className="modal-input-inline" placeholder="iPhone 15" /> : <span className="modal-value">{order.model}</span>}</div>
               <div className="modal-field"><span className="modal-label">IMEI</span>
                 {m.editing ? <input value={m.editImei} onChange={e => m.setEditImei(e.target.value)} className="modal-input-inline mono" placeholder="000000000000000" /> : <code className="modal-value-mono">{order.imei}</code>}</div>
+              <div className="modal-field"><span className="modal-label">Серийный №</span>
+                {m.editing ? <input value={m.editSerialNumber} onChange={e => m.setEditSerialNumber(e.target.value)} className="modal-input-inline mono" placeholder="SN..." /> : (
+                  order.serial_number ? <code className="modal-value-mono">{order.serial_number}</code> : <span className="modal-value" style={{ color: 'var(--text-muted)' }}>—</span>
+                )}</div>
             </div>
 
             {m.editing ? (

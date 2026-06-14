@@ -62,7 +62,7 @@ export type CatalogItem = { brand: string; model: string };
 export type CatalogEntry = { id: number; brand: string; model: string; group_name: string | null };
 export type CatalogListResponse = { items: CatalogEntry[]; total: number; groups: string[] };
 export type ImeiSearchResult = {
-  device_id: number; brand: string; model: string; imei: string;
+  device_id: number; brand: string; model: string; imei: string; serial_number: string | null;
   client_id: number; client_name: string; client_phone: string;
 };
 
@@ -111,7 +111,7 @@ export type Order = {
   created_at: string; completed_at: string | null;
   is_overdue: boolean;
   status_name: string; status_slug: string;
-  brand: string; model: string; imei: string;
+  brand: string; model: string; imei: string; serial_number: string | null; color: string | null;
   client_id: number; client_name: string; client_phone: string;
   master_name: string | null;
   created_by_name: string | null;

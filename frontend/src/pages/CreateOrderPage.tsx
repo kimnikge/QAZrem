@@ -127,7 +127,7 @@ export function CreateOrderPage() {
                 onChange={e => { setDevice('imei', e.target.value); ac.handleImeiInput(e.target.value); }}
                 onFocus={() => { if (form.device.imei.length >= 4) ac.handleImeiInput(form.device.imei); }} onBlur={ac.hideSuggestions} required />
               {ac.showImei && <div className="glass-suggestions">{ac.imeiSuggestions.map(dev => (
-                <div key={dev.device_id} className="glass-suggestion-item" onMouseDown={() => { const d = ac.selectImeiDevice(dev); setForm(p => ({ ...p, client: d.client, device: { ...p.device, ...d.device, serial_number: '', color: '' } })); }}>
+                <div key={dev.device_id} className="glass-suggestion-item" onMouseDown={() => { const d = ac.selectImeiDevice(dev); setForm(p => ({ ...p, client: d.client, device: { ...p.device, ...d.device, color: '' } })); }}>
                   <strong>{dev.brand} {dev.model}</strong>
                   <div style={{ color: '#5f6368', fontSize: 12 }}>{dev.client_name} · {dev.client_phone} · {dev.imei}</div>
                 </div>))}</div>}

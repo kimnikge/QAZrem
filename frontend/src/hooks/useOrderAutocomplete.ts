@@ -82,7 +82,7 @@ export function useOrderAutocomplete() {
     setShowImei(false);
     return {
       client: { name: dev.client_name, phone: dev.client_phone },
-      device: { brand: dev.brand, model: dev.model, imei: dev.imei }
+      device: { brand: dev.brand, model: dev.model, imei: dev.imei, serial_number: dev.serial_number || '' }
     };
   }
 

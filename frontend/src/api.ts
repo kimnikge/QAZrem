@@ -469,6 +469,7 @@ export type PrintTemplate = {
   name: string;
   content: string;
   is_default: boolean;
+  lang: string;
   created_at: string;
   updated_at: string;
 };
@@ -477,6 +478,7 @@ export type PrintTemplateListItem = {
   id: number;
   name: string;
   is_default: boolean;
+  lang: string;
   created_at: string;
   updated_at: string;
 };
@@ -518,4 +520,8 @@ export function deletePrintTemplate(id: number) {
 export function previewPrintTemplate(orderId: number, templateId?: number) {
   const qs = templateId ? `?templateId=${templateId}` : '';
   return request<{ html: string }>(`/print-templates/preview/${orderId}${qs}`);
+}
+
+export function samplePreviewPrintTemplate(content: string) {
+  return request<{ html: string }>(`/print-templates/sample-preview?content=${encodeURIComponent(content)}`);
 }

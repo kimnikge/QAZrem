@@ -11,7 +11,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "migrate:up": "node-pg-migrate up --env-path DATABASE_URL",
     "migrate:down": "node-pg-migrate down --env-path DATABASE_URL",
-    "migrate:create": "node-pg-migrate create"
+    "migrate:create": "node-pg-migrate create",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.107.0",
@@ -36,8 +38,11 @@
     "@types/morgan": "^1.9.10",
     "@types/node": "^20.11.30",
     "@types/pg": "^8.10.9",
+    "@types/supertest": "^7.2.0",
     "node-pg-migrate": "^8.0.4",
+    "supertest": "^7.2.2",
     "tsx": "^4.7.1",
-    "typescript": "^5.4.2"
+    "typescript": "^5.4.2",
+    "vitest": "^4.1.9"
   }
 }

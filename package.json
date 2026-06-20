@@ -16,9 +16,13 @@
     "migrate:up": "dotenv -e .env -- npx node-pg-migrate up -m backend/migrations",
     "migrate:down": "dotenv -e .env -- npx node-pg-migrate down -m backend/migrations",
     "migrate:create": "cd backend && npx node-pg-migrate create",
+    "test": "npm run test -w backend",
+    "test:e2e": "playwright test",
+    "test:all": "npm run build && npm test && npm run test:e2e",
     "setup:hooks": "ln -sf ../../.githooks/pre-commit .git/hooks/pre-commit && chmod +x .githooks/pre-commit && echo '✅ Pre-commit hook установлен'"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.0",
     "concurrently": "^8.2.2",
     "dotenv-cli": "^11.0.0"
   }

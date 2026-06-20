@@ -92,7 +92,23 @@ partsRouter.get('/movements', async (req, res, next) => {
   }
 });
 
-// GET /parts/:id
+// GET /parts/summary — сводка по складу (должен быть ДО /:id!)
+partsRouter.get('/summary', requireRole('admin'), async (_req, res, next) => {
+  try {
+    const result = await pool.query(
+      `SELECT
+        COUNT(*)::int AS total_items,
+        COALESCE(SUM(quantity), 0)::int AS total_quantity,
+        COALESCE(SUM(purchase_price * quantity), 0) AS total_cost,
+        COALESCE(SUM(selling_price * quantity), 0) AS total_value,
+        COALESCE(COUNT(*) FILTER (WHERE quantity <= min_quantity), 0)::int AS low_stock_count
+      FROM parts`
+    );
+    res.json(result.rows[0]);
+  } catch (error) { next(error); }
+});
+
+// GET /parts/:id — должен быть ПОСЛЕ /summary и /movements!
 partsRouter.get('/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
@@ -234,20 +250,4 @@ partsRouter.post('/writeoff', requireRole('admin'), async (req, res, next) => {
     await dbClient.query('ROLLBACK');
     next(error);
   } finally { dbClient.release(); }
-});
-
-// GET /parts/summary — сводка по складу
-partsRouter.get('/summary', requireRole('admin'), async (_req, res, next) => {
-  try {
-    const result = await pool.query(
-      `SELECT
-        COUNT(*)::int AS total_items,
-        COALESCE(SUM(quantity), 0)::int AS total_quantity,
-        COALESCE(SUM(purchase_price * quantity), 0) AS total_cost,
-        COALESCE(SUM(selling_price * quantity), 0) AS total_value,
-        COALESCE(COUNT(*) FILTER (WHERE quantity <= min_quantity), 0)::int AS low_stock_count
-      FROM parts`
-    );
-    res.json(result.rows[0]);
-  } catch (error) { next(error); }
 });

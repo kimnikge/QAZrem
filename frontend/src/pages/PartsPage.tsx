@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Package, Plus, Save, ArrowDownToLine } from 'lucide-react';
+import { Package, Plus, Save, ArrowDownToLine, Truck, UserPlus } from 'lucide-react';
 import { getParts, createPart, updatePart, receivePart, writeoffPart, type Part } from '../api';
+import { getSuppliers, createSupplier, type Supplier } from '../api/suppliers';
 import { useAuth } from '../context/AuthContext';
 
 export function PartsPage() {
@@ -24,6 +25,18 @@ export function PartsPage() {
   const [saving, setSaving] = useState(false);
   const [receiving, setReceiving] = useState(false);
 
+  // Suppliers
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [receiveSupplierId, setReceiveSupplierId] = useState<number>(0);
+  const [receiveSupplierSku, setReceiveSupplierSku] = useState('');
+  const [receiveBatchNumber, setReceiveBatchNumber] = useState('');
+
+  // Quick add supplier
+  const [showAddSupplier, setShowAddSupplier] = useState(false);
+  const [newSupplierName, setNewSupplierName] = useState('');
+  const [newSupplierPhone, setNewSupplierPhone] = useState('');
+  const [addingSupplier, setAddingSupplier] = useState(false);
+
   async function load() {
     try {
       const data = await getParts();
@@ -35,7 +48,7 @@ export function PartsPage() {
     }
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); getSuppliers().then(setSuppliers).catch(() => {}); }, []);
 
   async function handleCreate() {
     if (!newPart.name || !newPart.sku) return;
@@ -70,6 +83,9 @@ export function PartsPage() {
     });
     setReceiveQty(0);
     setReceiveDoc('');
+    setReceiveSupplierId(0);
+    setReceiveSupplierSku('');
+    setReceiveBatchNumber('');
   }
 
   async function handleSaveEdit() {
@@ -96,10 +112,18 @@ export function PartsPage() {
     if (!editPart || !receiveQty) return;
     setReceiving(true);
     try {
-      await receivePart(editPart.id, Math.round(Number(receiveQty)), receiveDoc || undefined);
+      await receivePart(
+        editPart.id, Math.round(Number(receiveQty)),
+        receiveDoc || undefined,
+        receiveSupplierId || undefined,
+        receiveSupplierSku || undefined,
+        receiveBatchNumber || undefined
+      );
       setReceiveQty(0);
       setReceiveDoc('');
-      // reload to get updated quantity
+      setReceiveSupplierId(0);
+      setReceiveSupplierSku('');
+      setReceiveBatchNumber('');
       const data = await getParts();
       setParts(data);
     } catch (e) {
@@ -119,6 +143,20 @@ export function PartsPage() {
       setParts(data);
     } catch (e) { console.error(e); }
     finally { setReceiving(false); }
+  }
+
+  async function handleAddSupplierQuick() {
+    if (!newSupplierName) return;
+    setAddingSupplier(true);
+    try {
+      const s = await createSupplier({ name: newSupplierName, phone: newSupplierPhone || undefined });
+      setSuppliers(prev => [...prev, s]);
+      setReceiveSupplierId(s.id);
+      setNewSupplierName('');
+      setNewSupplierPhone('');
+      setShowAddSupplier(false);
+    } catch (e) { console.error(e); }
+    finally { setAddingSupplier(false); }
   }
 
   const lowStockParts = parts.filter(p => p.quantity <= p.min_quantity);
@@ -169,6 +207,37 @@ export function PartsPage() {
             ))}
           </tbody>
         </table>
+      )}
+
+      {/* Поставщики */}
+      {isAdmin && suppliers.length > 0 && (
+        <div style={{ marginTop: 24 }}>
+          <div className="page-title" style={{ marginBottom: 12 }}>
+            <Truck size={20} />
+            <h3 style={{ margin: 0, fontSize: 16 }}>Поставщики</h3>
+            <span className="badge" style={{ background: '#6b7280' }}>{suppliers.length}</span>
+          </div>
+          <table className="table" style={{ fontSize: 13 }}>
+            <thead>
+              <tr>
+                <th>Название</th>
+                <th>Контакт</th>
+                <th>Телефон</th>
+                <th>Поставок</th>
+              </tr>
+            </thead>
+            <tbody>
+              {suppliers.map(s => (
+                <tr key={s.id}>
+                  <td><strong>{s.name}</strong></td>
+                  <td>{s.contact_person || '—'}</td>
+                  <td>{s.phone || '—'}</td>
+                  <td>{s.deliveries_count ?? 0}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
       {/* Modal: создать запчасть */}
@@ -272,6 +341,65 @@ export function PartsPage() {
 
             {/* Оприходование */}
             <h4 style={{ fontSize: 14, marginBottom: 8, color: '#202124' }}>Оприходовать на склад</h4>
+
+            {/* Поставщик */}
+            <div style={{ display: 'flex', gap: 8, alignItems: 'end', marginBottom: 8 }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 13, color: '#5f6368', display: 'block', marginBottom: 4 }}>Поставщик</label>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  <select value={receiveSupplierId || ''} onChange={e => setReceiveSupplierId(Number(e.target.value) || 0)}
+                    style={{ flex: 1, padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14, background: 'var(--card-bg)' }}>
+                    <option value="">— Без поставщика —</option>
+                    {suppliers.map(s => (
+                      <option key={s.id} value={s.id}>{s.name}{s.deliveries_count ? ` (${s.deliveries_count})` : ''}</option>
+                    ))}
+                  </select>
+                  <button onClick={() => setShowAddSupplier(!showAddSupplier)}
+                    style={{ padding: '8px 10px', background: 'none', border: '1px dashed var(--primary)', borderRadius: 6, cursor: 'pointer', color: 'var(--primary)', fontSize: 18, lineHeight: 1, whiteSpace: 'nowrap' }}
+                    title="Добавить поставщика">
+                    <UserPlus size={16} />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Быстрое добавление поставщика */}
+            {showAddSupplier && (
+              <div style={{ marginBottom: 8, padding: '8px', background: 'var(--bg)', borderRadius: 6, border: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'end' }}>
+                  <div>
+                    <label style={{ fontSize: 11, color: '#5f6368', display: 'block', marginBottom: 2 }}>Название *</label>
+                    <input value={newSupplierName} onChange={e => setNewSupplierName(e.target.value)}
+                      placeholder="ООО Поставщик" style={{ width: 150, padding: '6px 8px', border: '1px solid var(--border)', borderRadius: 4, fontSize: 12 }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, color: '#5f6368', display: 'block', marginBottom: 2 }}>Телефон</label>
+                    <input value={newSupplierPhone} onChange={e => setNewSupplierPhone(e.target.value)}
+                      placeholder="+7..." style={{ width: 120, padding: '6px 8px', border: '1px solid var(--border)', borderRadius: 4, fontSize: 12 }} />
+                  </div>
+                  <button onClick={handleAddSupplierQuick} disabled={addingSupplier || !newSupplierName}
+                    style={{ padding: '6px 12px', fontSize: 12, background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}>
+                    {addingSupplier ? '...' : 'Добавить'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Артикул поставщика + Номер партии */}
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+              <div>
+                <label style={{ fontSize: 13, color: '#5f6368', display: 'block', marginBottom: 4 }}>Код поставщика</label>
+                <input value={receiveSupplierSku} onChange={e => setReceiveSupplierSku(e.target.value)}
+                  placeholder="Напр: SCR-IP15-V2" style={{ width: 150, padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14 }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 13, color: '#5f6368', display: 'block', marginBottom: 4 }}>№ партии</label>
+                <input value={receiveBatchNumber} onChange={e => setReceiveBatchNumber(e.target.value)}
+                  placeholder="BATCH-001" style={{ width: 130, padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14 }} />
+              </div>
+            </div>
+
+            {/* Количество + Документ + Кнопка */}
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'end' }}>
               <div>
                 <label style={{ fontSize: 13, color: '#5f6368', display: 'block', marginBottom: 4 }}>Количество</label>

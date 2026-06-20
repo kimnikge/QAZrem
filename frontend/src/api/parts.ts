@@ -34,8 +34,8 @@ export function updatePart(id: number, data: Partial<CreatePartInput>) {
   return request<Part>(`/parts/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
 }
 
-export function receivePart(part_id: number, quantity: number, document?: string) {
+export function receivePart(part_id: number, quantity: number, document?: string, supplier_id?: number, supplier_sku?: string, batch_number?: string) {
   return request<{ message: string }>('/parts/movement', {
-    method: 'POST', body: JSON.stringify({ part_id, quantity, document })
+    method: 'POST', body: JSON.stringify({ part_id, quantity, document, supplier_id, supplier_sku, batch_number })
   });
 }

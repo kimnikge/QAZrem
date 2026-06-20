@@ -54,6 +54,11 @@ export {
 } from './settings';
 
 export {
+  type Supplier, type CreateSupplierInput,
+  getSuppliers, createSupplier, updateSupplier, deleteSupplier,
+} from './suppliers';
+
+export {
   type Location,
   getLocations, createLocation, updateLocation, deleteLocation,
 } from './locations';

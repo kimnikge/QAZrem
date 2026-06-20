@@ -22,7 +22,10 @@ const movementSchema = z.object({
   part_id: z.number().int().positive(),
   quantity: z.number().int().positive(),
   document: z.string().optional(),
-  order_id: z.number().int().positive().optional()
+  order_id: z.number().int().positive().optional(),
+  supplier_id: z.number().int().positive().optional(),
+  supplier_sku: z.string().optional(),
+  batch_number: z.string().optional()
 });
 
 // GET /parts — список запчастей (с фильтром low_stock)
@@ -53,9 +56,11 @@ partsRouter.get('/movements', async (req, res, next) => {
     const offsetNum = Math.max(parseInt(offset as string, 10) || 0, 0);
 
     let sql = `
-      SELECT pm.*, p.name AS part_name, p.sku
+      SELECT pm.*, p.name AS part_name, p.sku,
+        s.name AS supplier_name
       FROM part_movements pm
       JOIN parts p ON p.id = pm.part_id
+      LEFT JOIN suppliers s ON s.id = pm.supplier_id
       WHERE 1=1
     `;
     const params: unknown[] = [];
@@ -205,9 +210,10 @@ partsRouter.post('/movement', requireRole('admin'), async (req, res, next) => {
 
     // Запись в part_movements
     await dbClient.query(
-      `INSERT INTO part_movements (part_id, type, quantity, order_id, document)
-       VALUES ($1, 'incoming', $2, $3, $4)`,
-      [input.part_id, input.quantity, input.order_id || null, input.document || null]
+      `INSERT INTO part_movements (part_id, type, quantity, order_id, document, supplier_id, supplier_sku, batch_number)
+       VALUES ($1, 'incoming', $2, $3, $4, $5, $6, $7)`,
+      [input.part_id, input.quantity, input.order_id || null, input.document || null,
+       input.supplier_id || null, input.supplier_sku || null, input.batch_number || null]
     );
 
     await dbClient.query('COMMIT');

@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getOrders, updateOrderStatus, getOrderGroups, type Order, type OrderGroup } from '../api';
+import { getOrders, updateOrderStatus, getOrderGroups, getAllUsers, type Order, type OrderGroup } from '../api';
 import { useAuth } from '../context/AuthContext';
 import { BoardView } from '../components/BoardView';
 import { OrderModal } from '../components/OrderModal';
 import { DashboardTable, loadColumnOrder, type ColumnKey } from '../components/DashboardTable';
-import { LayoutList, Kanban, Download, RotateCcw, Maximize2, Minimize2 } from 'lucide-react';
+import { QuickFilters } from '../components/QuickFilters';
+import { OrderSummary } from '../components/OrderSummary';
+import { LayoutList, Kanban, Download, RotateCcw, Maximize2, Minimize2, Filter, X } from 'lucide-react';
 import { STATUS_LABELS } from '../constants';
 
 const apiUrl = import.meta.env.VITE_API_URL || '/api';
@@ -36,16 +38,45 @@ export function DashboardPage() {
   const [modalOrder, setModalOrder] = useState<Order | null>(null);
   const [statusDropdownId, setStatusDropdownId] = useState<number | null>(null);
 
+  // Filters
+  const [showFilters, setShowFilters] = useState(false);
+  const [brandFilter, setBrandFilter] = useState('');
+  const [modelFilter, setModelFilter] = useState('');
+  const [masterFilter, setMasterFilter] = useState('');
+  const [createdFrom, setCreatedFrom] = useState('');
+  const [createdTo, setCreatedTo] = useState('');
+  const [masters, setMasters] = useState<Array<{ id: number; name: string }>>([]);
+
+  // Собрать уникальные бренды из заказов для фильтра
+  const brands = [...new Set(orders.map(o => o.brand).filter(Boolean))].sort();
+  const models = [...new Set(orders.map(o => o.model).filter(Boolean))].sort();
+  const topBrands = (() => {
+    const freq: Record<string, number> = {};
+    orders.forEach(o => { if (o.brand) freq[o.brand] = (freq[o.brand] || 0) + 1; });
+    return Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([k]) => k);
+  })();
+
+  function buildParams(): Record<string, string> {
+    const p: Record<string, string> = { limit: '100' };
+    if (statusMap[tab]) p.status = statusMap[tab]!;
+    if (tab === 'overdue') p.overdue = 'true';
+    if (tab === 'my') p.my = 'true';
+    if (groupFilter) p.group_id = groupFilter;
+    if (brandFilter) p.brand = brandFilter;
+    if (modelFilter) p.model = modelFilter;
+    if (masterFilter) p.master_id = masterFilter;
+    if (createdFrom) p.created_from = createdFrom;
+    if (createdTo) p.created_to = createdTo;
+    return p;
+  }
+
   useEffect(() => {
     setLoading(true);
-    const params: { status?: string; limit: number; overdue?: string; my?: string; group_id?: string } = { status: statusMap[tab], limit: 100 };
-    if (tab === 'overdue') params.overdue = 'true';
-    if (tab === 'my') params.my = 'true';
-    if (groupFilter) params.group_id = groupFilter;
-    getOrders(params).then(res => setOrders(res.orders)).catch(console.error).finally(() => setLoading(false));
-  }, [tab, groupFilter]);
+    getOrders(buildParams()).then(res => setOrders(res.orders)).catch(console.error).finally(() => setLoading(false));
+  }, [tab, groupFilter, brandFilter, modelFilter, masterFilter, createdFrom, createdTo]);
 
   useEffect(() => { getOrderGroups().then(setGroups).catch(() => {}); }, []);
+  useEffect(() => { getAllUsers().then(u => setMasters(u.filter(x => x.role === 'master'))).catch(() => {}); }, []);
 
   useEffect(() => {
     if (statusDropdownId === null) return;
@@ -63,12 +94,15 @@ export function DashboardPage() {
   }
 
   function handleModalRefresh() {
-    const params: { status?: string; limit: number; overdue?: string; my?: string; group_id?: string } = { status: statusMap[tab], limit: 100 };
-    if (tab === 'overdue') params.overdue = 'true';
-    if (tab === 'my') params.my = 'true';
-    if (groupFilter) params.group_id = groupFilter;
-    getOrders(params).then(res => setOrders(res.orders)).catch(console.error);
+    getOrders(buildParams()).then(res => setOrders(res.orders)).catch(console.error);
   }
+
+  function resetFilters() {
+    setBrandFilter(''); setModelFilter(''); setMasterFilter('');
+    setCreatedFrom(''); setCreatedTo(''); setShowFilters(false);
+  }
+
+  const hasActiveFilters = brandFilter || modelFilter || masterFilter || createdFrom || createdTo;
 
   const counts = {
     new: orders.filter(o => o.status_slug === 'new').length,
@@ -97,6 +131,7 @@ export function DashboardPage() {
 
   return (
     <div className={`ro-dashboard${compact ? ' compact' : ''}`}>
+      <OrderSummary orders={orders} currentUserId={user?.id} currentUserRole={user?.role} />
       <div className="ro-stats">{statCards.map(c => (
         <div key={c.label} className="ro-stat-card" style={{ borderLeftColor: c.color }}>
           <span className="ro-stat-value">{c.value}</span><span className="ro-stat-label">{c.label}</span>
@@ -106,6 +141,41 @@ export function DashboardPage() {
         <button key={t.key} className={`ro-tab${tab === t.key ? ' active' : ''}`} onClick={() => setTab(t.key)}>
           {t.label}{t.count > 0 && <span className="ro-tab-count">{t.count}</span>}
         </button>))}</div>
+
+      {/* Filter bar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
+        <button className="btn-secondary" onClick={() => setShowFilters(!showFilters)} style={{ padding: '6px 10px', fontSize: 12 }}>
+          <Filter size={13} /> Фильтр{hasActiveFilters ? ` (активен)` : ''}
+        </button>
+        {hasActiveFilters && (
+          <button onClick={resetFilters} style={{ padding: '6px 10px', fontSize: 12, background: 'none', border: '1px solid var(--danger)', borderRadius: 6, color: 'var(--danger)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+            <X size={13} /> Сбросить
+          </button>
+        )}
+      </div>
+
+      {showFilters && (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8, padding: '8px 12px', background: 'var(--bg)', borderRadius: 8, border: '1px solid var(--border)' }}>
+          <FilterSelect label="Бренд" value={brandFilter} onChange={setBrandFilter} options={brands} />
+          <FilterSelect label="Модель" value={modelFilter} onChange={setModelFilter} options={models} />
+          <FilterSelect label="Мастер" value={masterFilter} onChange={setMasterFilter}
+            options={masters.map(m => ({ value: String(m.id), label: m.name }))} />
+          <div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>Создано с</div>
+            <input type="date" value={createdFrom} onChange={e => setCreatedFrom(e.target.value)}
+              style={{ padding: '4px 8px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 12, background: 'var(--card-bg)', color: 'var(--text)' }} />
+          </div>
+          <div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>Создано по</div>
+            <input type="date" value={createdTo} onChange={e => setCreatedTo(e.target.value)}
+              style={{ padding: '4px 8px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 12, background: 'var(--card-bg)', color: 'var(--text)' }} />
+          </div>
+        </div>
+      )}
+
+      {/* Quick chips — brands + masters */}
+      <QuickFilters brands={topBrands} masters={masters} brandFilter={brandFilter} masterFilter={masterFilter}
+        onBrandChange={setBrandFilter} onMasterChange={setMasterFilter} />
 
       <div className="ro-actions">
         <button className="ro-btn-primary" onClick={() => navigate('/create-order')}>+ Заказ</button>
@@ -146,6 +216,27 @@ export function DashboardPage() {
 
       {!loading && orders.length === 0 && view === 'table' && <div className="empty-state"><p>Нет заказов</p></div>}
       {modalOrder && <OrderModal orderId={modalOrder.id} preload={modalOrder} onClose={() => setModalOrder(null)} onOrderUpdated={handleModalRefresh} />}
+    </div>
+  );
+}
+
+// Маленький переиспользуемый компонент для фильтра-селекта
+function FilterSelect({ label, value, onChange, options }: {
+  label: string; value: string; onChange: (v: string) => void;
+  options: Array<string | { value: string; label: string }>;
+}) {
+  return (
+    <div>
+      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>{label}</div>
+      <select value={value} onChange={e => onChange(e.target.value)}
+        style={{ padding: '4px 8px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 12, background: 'var(--card-bg)', color: 'var(--text)', minWidth: 120 }}>
+        <option value="">Все</option>
+        {options.map((opt, i) => {
+          const val = typeof opt === 'string' ? opt : opt.value;
+          const lbl = typeof opt === 'string' ? opt : opt.label;
+          return <option key={i} value={val}>{lbl}</option>;
+        })}
+      </select>
     </div>
   );
 }

@@ -2016,3 +2016,22 @@ body.dark .modal-select:focus {
   .glass-grid-2, .glass-grid-3 { grid-template-columns: 1fr; }
   .glass-card { padding: 18px; }
 }
+
+/* Quick filter chips */
+.chip {
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--card-bg);
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.chip:hover { border-color: var(--primary); color: var(--primary); }
+.chip.active {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}

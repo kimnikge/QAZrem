@@ -27,6 +27,17 @@ export function OrderInfoCard({ order, editing, editCost, onEditCost, editDiscou
       <div className="detail-row"><span>Устройство</span><strong>{order.brand} {order.model}</strong></div>
       <div className="detail-row"><span>IMEI</span><code>{order.imei}</code></div>
       {order.serial_number && <div className="detail-row"><span>Серийный номер</span><code>{order.serial_number}</code></div>}
+      {order.password && <div className="detail-row"><span>Пароль</span><code>{order.password}</code></div>}
+      {order.face_id && <div className="detail-row"><span>Face ID</span>✅ Да</div>}
+      {order.completeness && <div className="detail-row"><span>Комплектация</span>{order.completeness}</div>}
+      {order.condition && <div className="detail-row"><span>Состояние</span><strong style={{ color: order.condition === 'Отличное' ? '#22c55e' : '#f59e0b' }}>{order.condition}</strong></div>}
+      {order.appearance && <div className="detail-row"><span>Внешний вид</span>{order.appearance}</div>}
+      <div className="detail-row"><span>Тип</span><strong>{order.order_type === 'warranty' ? '🛡 По гарантии' : '💰 Платный'}</strong></div>
+      {order.image_url && (
+        <div style={{ marginTop: 8 }}>
+          <img src={order.image_url} alt="Фото устройства" style={{ width: '100%', maxHeight: 200, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} />
+        </div>
+      )}
       <div className="detail-row"><span>Статус</span><strong>{STATUS_LABELS[order.status_slug]}</strong></div>
       <div className="detail-row"><span>Мастер</span><strong>{order.master_name || '—'}</strong></div>
       <div className="detail-row"><span>Локация</span><strong>{order.location_name || '—'}</strong></div>
@@ -76,6 +87,7 @@ export function OrderInfoCard({ order, editing, editCost, onEditCost, editDiscou
             <div className="detail-row"><span>Остаток</span><strong style={{ color: '#22c55e' }}>0 ₸ ✓</strong></div>
           )}
           {order.internal_comment && <div className="detail-row"><span>Комментарий</span>{order.internal_comment}</div>}
+          {order.manager_notes && <div className="detail-row"><span>Заметки</span><em style={{ color: '#5f6368' }}>{order.manager_notes}</em></div>}
         </>
       )}
     </div>

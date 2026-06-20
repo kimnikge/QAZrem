@@ -24,6 +24,9 @@ import { searchRouter } from './routes/search.js';
 import { servicesRouter } from './routes/services.js';
 import { settingsRouter } from './routes/settings.js';
 import { usersRouter } from './routes/users.js';
+import { accountsRouter } from './routes/accounts.js';
+import { transfersRouter } from './routes/transfers.js';
+import { reportsRouter } from './routes/reports.js';
 import { requireAuth } from './middleware/auth.js';
 
 export const app = express();
@@ -92,6 +95,9 @@ app.use('/finance', financeRouter);
 app.use('/settings', settingsRouter);
 app.use('/print-templates', printTemplatesRouter);
 app.use('/users', usersRouter);
+app.use('/accounts', requireAuth, accountsRouter);
+app.use('/transfers', requireAuth, transfersRouter);
+app.use('/reports', requireAuth, reportsRouter);
 
 // Централизованная обработка ошибок
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { PlusCircle, Trash2 } from 'lucide-react';
-import { createPayment, deletePayment, refundPayment, type OrderDetail, type SettingsData } from '../api';
+import { createPayment, deletePayment, refundPayment, getAccounts, type OrderDetail, type SettingsData, type CompanyAccount } from '../api';
 
 interface Props {
   order: OrderDetail;
@@ -17,18 +17,27 @@ export function OrderPaymentsCard({ order, settings, userRole, onRefresh, onErro
   const [method, setMethod] = useState<number>(0);
   const [prepayment, setPrepayment] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [accounts, setAccounts] = useState<CompanyAccount[]>([]);
+  const [splits, setSplits] = useState<Record<number, number>>({});
+
+  useEffect(() => { getAccounts().then(setAccounts).catch(() => {}); }, []);
+
+  const splitsTotal = Object.values(splits).reduce((s, v) => s + v, 0);
 
   async function handleAdd() {
     if (!amount || !method) return;
     setSaving(true);
     try {
+      const paymentAmount = Math.round(Number(amount));
+      const validSplits = Object.entries(splits)
+        .filter(([, v]) => v > 0)
+        .map(([account_id, amt]) => ({ account_id: Number(account_id), amount: amt }));
       await createPayment({
-        order_id: order.id,
-        amount: Math.round(Number(amount)),
-        payment_method_id: method,
-        is_prepayment: prepayment
+        order_id: order.id, amount: paymentAmount,
+        payment_method_id: method, is_prepayment: prepayment,
+        splits: validSplits.length > 0 && splitsTotal === paymentAmount ? validSplits : undefined
       });
-      setShowForm(false); setAmount(''); setPrepayment(false);
+      setShowForm(false); setAmount(''); setPrepayment(false); setSplits({});
       onRefresh();
     } catch (err) {
       onError(err instanceof Error ? err.message : 'Ошибка приёма платежа');
@@ -80,6 +89,28 @@ export function OrderPaymentsCard({ order, settings, userRole, onRefresh, onErro
               {saving ? '...' : 'Провести'}
             </button>
           </div>
+
+          {/* Сплитование по кассам */}
+          {accounts.length > 0 && (
+            <div style={{ marginTop: 10, borderTop: '1px solid var(--border)', paddingTop: 10 }}>
+              <span style={{ fontSize: 12, color: '#5f6368', fontWeight: 500 }}>Разбивка по кассам</span>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
+                {accounts.map(a => (
+                  <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span style={{ fontSize: 11, color: '#5f6368' }}>{a.name}</span>
+                    <input type="number" value={splits[a.id] || ''}
+                      onChange={e => setSplits(prev => ({ ...prev, [a.id]: Math.round(Number(e.target.value) || 0) }))}
+                      placeholder="0" style={{ width: 70, padding: '4px 6px', border: '1px solid var(--border)', borderRadius: 4, fontSize: 12, textAlign: 'right' }} />
+                  </div>
+                ))}
+              </div>
+              {Object.keys(splits).length > 0 && splitsTotal > 0 && (
+                <div style={{ fontSize: 11, color: splitsTotal === Math.round(Number(amount) || 0) ? '#22c55e' : '#ef4444', marginTop: 4 }}>
+                  Распределено: {splitsTotal} / {Math.round(Number(amount) || 0)} ₸
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -101,6 +132,13 @@ export function OrderPaymentsCard({ order, settings, userRole, onRefresh, onErro
               <button onClick={() => handleDelete(p.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9aa0a6', padding: 2, display: 'flex' }} title="Удалить"><Trash2 size={14} /></button>
             )}
           </div>
+          {p.splits && p.splits.length > 0 && (
+            <div style={{ fontSize: 11, color: '#5f6368', marginTop: 2 }}>
+              {p.splits.map(s => (
+                <span key={s.id} style={{ marginRight: 8 }}>{s.account_name}: {Math.round(Number(s.amount))} ₸</span>
+              ))}
+            </div>
+          )}
         </div>
       ))}
       {order.payments.length === 0 && !showForm && (

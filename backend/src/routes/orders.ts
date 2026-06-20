@@ -20,6 +20,11 @@ const orderPartSchema = z.object({
   quantity: z.number().int().positive()
 });
 
+const orderServiceSchema = z.object({
+  service_id: z.number().int().positive(),
+  quantity: z.number().int().positive().default(1)
+});
+
 const createOrderWithNewDeviceSchema = z.object({
   client: z.object({
     name: z.string().min(2),
@@ -43,7 +48,17 @@ const createOrderWithNewDeviceSchema = z.object({
   estimated_cost: z.number().nonnegative().optional(),
   discount: z.number().nonnegative().optional(),
   parts: z.array(orderPartSchema).optional(),
-  group_id: z.number().int().positive().optional().nullable()
+  services: z.array(orderServiceSchema).optional(),
+  group_id: z.number().int().positive().optional().nullable(),
+  location_id: z.number().int().positive().optional().nullable(),
+  password: z.string().optional().or(z.literal('')),
+  face_id: z.boolean().optional(),
+  completeness: z.string().optional().or(z.literal('')),
+  condition: z.string().optional().or(z.literal('')),
+  appearance: z.string().optional().or(z.literal('')),
+  manager_notes: z.string().optional().or(z.literal('')),
+  order_type: z.enum(['paid', 'warranty']).optional(),
+  image_url: z.string().optional().or(z.literal(''))
 });
 
 const createOrderWithExistingDeviceSchema = z.object({
@@ -57,7 +72,17 @@ const createOrderWithExistingDeviceSchema = z.object({
   estimated_cost: z.number().nonnegative().optional(),
   discount: z.number().nonnegative().optional(),
   parts: z.array(orderPartSchema).optional(),
-  group_id: z.number().int().positive().optional().nullable()
+  services: z.array(orderServiceSchema).optional(),
+  group_id: z.number().int().positive().optional().nullable(),
+  location_id: z.number().int().positive().optional().nullable(),
+  password: z.string().optional().or(z.literal('')),
+  face_id: z.boolean().optional(),
+  completeness: z.string().optional().or(z.literal('')),
+  condition: z.string().optional().or(z.literal('')),
+  appearance: z.string().optional().or(z.literal('')),
+  manager_notes: z.string().optional().or(z.literal('')),
+  order_type: z.enum(['paid', 'warranty']).optional(),
+  image_url: z.string().optional().or(z.literal(''))
 });
 
 const updateStatusSchema = z.object({
@@ -86,7 +111,9 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
 // ============================================================
 ordersRouter.get('/', async (req, res, next) => {
   try {
-    const { status, master_id, search, overdue, my, group_id, limit = '50', offset = '0' } = req.query;
+    const { status, master_id, search, overdue, my, group_id,
+      created_from, created_to, brand, model, client_id,
+      limit = '50', offset = '0' } = req.query;
     const limitNum = Math.min(Math.max(parseInt(limit as string, 10) || 50, 1), 200);
     const offsetNum = Math.max(parseInt(offset as string, 10) || 0, 0);
 
@@ -98,6 +125,8 @@ ordersRouter.get('/', async (req, res, next) => {
         o.deadline, o.status_deadline, o.priority, o.source,
         o.master_commission_pct, o.group_id, o.location_id,
         o.created_at, o.completed_at,
+        o.password, o.face_id, o.completeness, o.condition, o.appearance, o.manager_notes, o.order_type,
+        o.image_url,
         (o.deadline IS NOT NULL AND o.deadline < NOW() AND os.is_final = FALSE) AS is_overdue,
         os.name AS status_name, os.slug AS status_slug,
         d.brand, d.model, d.imei,
@@ -150,6 +179,26 @@ ordersRouter.get('/', async (req, res, next) => {
         sql += ` AND o.group_id = $${idx++}`;
         params.push(Number(group_id));
       }
+    }
+    if (created_from) {
+      sql += ` AND o.created_at >= $${idx++}`;
+      params.push(created_from);
+    }
+    if (created_to) {
+      sql += ` AND o.created_at <= $${idx++}`;
+      params.push(created_to);
+    }
+    if (brand) {
+      sql += ` AND d.brand ILIKE $${idx++}`;
+      params.push(`%${brand}%`);
+    }
+    if (model) {
+      sql += ` AND d.model ILIKE $${idx++}`;
+      params.push(`%${model}%`);
+    }
+    if (client_id) {
+      sql += ` AND c.id = $${idx++}`;
+      params.push(Number(client_id));
     }
 
     // Общее количество (для пагинации)
@@ -268,6 +317,8 @@ ordersRouter.get('/:id', async (req, res, next) => {
         o.deadline, o.status_deadline, o.priority, o.source,
         o.master_commission_pct, o.group_id, o.location_id,
         o.created_at, o.completed_at,
+        o.password, o.face_id, o.completeness, o.condition, o.appearance, o.manager_notes, o.order_type,
+        o.image_url,
         os.name AS status_name, os.slug AS status_slug, os.is_final,
         d.brand, d.model, d.imei, d.serial_number, d.color,
         c.id AS client_id, c.name AS client_name, c.phone AS client_phone, c.email AS client_email, c.address AS client_address,
@@ -314,6 +365,15 @@ ordersRouter.get('/:id', async (req, res, next) => {
       [id]
     );
 
+    // Услуги
+    const servicesResult = await pool.query(
+      `SELECT osrv.*, s.name AS service_name
+      FROM order_services osrv
+      JOIN services s ON s.id = osrv.service_id
+      WHERE osrv.order_id = $1`,
+      [id]
+    );
+
     // Платежи
     const paymentsResult = await pool.query(
       `SELECT p.*, pm.name AS payment_method_name
@@ -324,11 +384,25 @@ ordersRouter.get('/:id', async (req, res, next) => {
       [id]
     );
 
+    // Splits для каждого платежа
+    const paymentsWithSplits = [];
+    for (const payment of paymentsResult.rows) {
+      const splitsResult = await pool.query(
+        `SELECT ps.*, ca.name AS account_name
+        FROM payment_splits ps
+        JOIN company_accounts ca ON ca.id = ps.account_id
+        WHERE ps.payment_id = $1`,
+        [payment.id]
+      );
+      paymentsWithSplits.push({ ...payment, splits: splitsResult.rows });
+    }
+
     res.json({
       ...orderResult.rows[0],
       history: historyResult.rows,
       parts: partsResult.rows,
-      payments: paymentsResult.rows
+      services: servicesResult.rows,
+      payments: paymentsWithSplits
     });
   } catch (error) {
     next(error);
@@ -377,6 +451,15 @@ const updateOrderSchema = z.object({
   priority: z.enum(['normal', 'urgent', 'critical']).optional(),
   source: z.string().optional(),
   group_id: z.number().int().positive().optional().nullable(),
+  // Extended fields
+  password: z.string().optional().or(z.literal('')),
+  face_id: z.boolean().optional(),
+  completeness: z.string().optional().or(z.literal('')),
+  condition: z.string().optional().or(z.literal('')),
+  appearance: z.string().optional().or(z.literal('')),
+  manager_notes: z.string().optional().or(z.literal('')),
+  order_type: z.enum(['paid', 'warranty']).optional(),
+  image_url: z.string().optional().or(z.literal('')),
   // Client fields
   client_name: z.string().min(2).optional(),
   client_phone: z.string().min(5).optional(),
@@ -419,7 +502,9 @@ ordersRouter.patch('/:id', requireRole('admin', 'master'), async (req, res, next
     let idx = 1;
 
     const orderFieldKeys = ['cost', 'estimated_cost', 'discount', 'diagnosis', 'issue_description',
-      'internal_comment', 'master_id', 'master_commission_pct', 'deadline', 'priority', 'source', 'group_id'];
+      'internal_comment', 'master_id', 'master_commission_pct', 'deadline', 'priority', 'source', 'group_id',
+      'password', 'face_id', 'completeness', 'condition', 'appearance', 'manager_notes', 'order_type',
+      'image_url'];
 
     for (const key of orderFieldKeys) {
       const value = (input as Record<string, unknown>)[key];
@@ -628,8 +713,8 @@ ordersRouter.post('/', requireRole('admin', 'reception'), async (req, res, next)
 
     // Создаём заказ
     const orderResult = await client.query(
-      `INSERT INTO orders (device_id, master_id, status_id, issue_description, deadline, priority, source, estimated_cost, discount, master_commission_pct, group_id, location_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      `INSERT INTO orders (device_id, master_id, status_id, issue_description, deadline, priority, source, estimated_cost, discount, master_commission_pct, group_id, location_id, password, face_id, completeness, condition, appearance, manager_notes, order_type, image_url)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
        RETURNING id`,
       [
         deviceId,
@@ -643,7 +728,15 @@ ordersRouter.post('/', requireRole('admin', 'reception'), async (req, res, next)
         req.body.discount || 0,
         masterCommissionPct,
         req.body.group_id || null,
-        req.body.location_id || null
+        req.body.location_id || null,
+        req.body.password || null,
+        req.body.face_id || false,
+        req.body.completeness || null,
+        req.body.condition || null,
+        req.body.appearance || null,
+        req.body.manager_notes || null,
+        req.body.order_type || 'paid',
+        req.body.image_url || null
       ]
     );
     const orderId = orderResult.rows[0].id;
@@ -693,6 +786,23 @@ ordersRouter.post('/', requireRole('admin', 'reception'), async (req, res, next)
         `INSERT INTO part_movements (part_id, type, quantity, order_id)
          VALUES ($1, 'outgoing', $2, $3)`,
         [part.part_id, part.quantity, orderId]
+      );
+    }
+
+    // Добавление услуг (если переданы)
+    const services: Array<{ service_id: number; quantity: number }> = req.body.services || [];
+    for (const svc of services) {
+      const svcResult = await client.query(
+        'SELECT price, master_commission_pct FROM services WHERE id = $1',
+        [svc.service_id]
+      );
+      if (svcResult.rows.length === 0) {
+        throw new NotFoundError(`Услуга с id=${svc.service_id}`);
+      }
+      await client.query(
+        `INSERT INTO order_services (order_id, service_id, quantity, price_at_moment, master_commission_pct_at_moment)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [orderId, svc.service_id, svc.quantity || 1, Number(svcResult.rows[0].price), Number(svcResult.rows[0].master_commission_pct)]
       );
     }
 
@@ -900,4 +1010,60 @@ ordersRouter.delete('/:id/parts/:partId', requireRole('admin'), async (req, res,
   } finally {
     dbClient.release();
   }
+});
+
+// ============================================================
+// POST /orders/:id/services — добавить услугу к заказу
+// ============================================================
+ordersRouter.post('/:id/services', requireRole('admin', 'master', 'reception'), async (req, res, next) => {
+  try {
+    const orderId = parseInt(req.params.id);
+    const { service_id, quantity } = z.object({
+      service_id: z.number().int().positive(),
+      quantity: z.number().int().positive().default(1)
+    }).parse(req.body);
+
+    // Проверить заказ
+    const order = await pool.query(
+      `SELECT o.id, os.is_final FROM orders o
+       JOIN order_statuses os ON os.id = o.status_id WHERE o.id = $1`,
+      [orderId]
+    );
+    if (order.rows.length === 0) throw new NotFoundError('Заказ');
+    if (order.rows[0].is_final) throw new BadRequestError('Нельзя добавить услугу в завершённый заказ');
+
+    // Найти услугу
+    const svc = await pool.query('SELECT * FROM services WHERE id = $1', [service_id]);
+    if (svc.rows.length === 0) throw new NotFoundError('Услуга');
+
+    const { price, master_commission_pct } = svc.rows[0];
+
+    const result = await pool.query(
+      `INSERT INTO order_services (order_id, service_id, quantity, price_at_moment, master_commission_pct_at_moment)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [orderId, service_id, quantity, price, master_commission_pct]
+    );
+
+    res.status(201).json(result.rows[0]);
+  } catch (error) { next(error); }
+});
+
+// ============================================================
+// DELETE /orders/:id/services/:sid — убрать услугу из заказа
+// ============================================================
+ordersRouter.delete('/:id/services/:sid', requireRole('admin', 'master', 'reception'), async (req, res, next) => {
+  try {
+    const orderId = parseInt(req.params.id);
+    const serviceId = parseInt(req.params.sid);
+
+    const row = await pool.query(
+      'SELECT osrv.quantity, s.name FROM order_services osrv JOIN services s ON s.id = osrv.service_id WHERE osrv.order_id = $1 AND osrv.service_id = $2',
+      [orderId, serviceId]
+    );
+    if (row.rows.length === 0) throw new NotFoundError('Услуга в заказе');
+
+    await pool.query('DELETE FROM order_services WHERE order_id = $1 AND service_id = $2', [orderId, serviceId]);
+
+    res.json({ message: `Услуга "${row.rows[0].name}" убрана из заказа` });
+  } catch (error) { next(error); }
 });

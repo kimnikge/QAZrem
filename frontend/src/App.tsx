@@ -3,7 +3,9 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { Layout } from './components/Layout';
 import { LoginPage } from './pages/LoginPage';
 import { AnalyticsPage } from './pages/AnalyticsPage';
+import { ReportsPage } from './pages/ReportsPage';
 import { CatalogPage } from './pages/CatalogPage';
+import { ClientsPage } from './pages/ClientsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { CreateOrderPage } from './pages/CreateOrderPage';
@@ -41,9 +43,11 @@ function AppRoutes() {
         <Route path="/print-order/:id" element={<PrintOrderPage />} />
         <Route path="/parts" element={<PartsPage />} />
         <Route path="/catalog" element={<CatalogPage />} />
+        <Route path="/clients" element={<ClientsPage />} />
         <Route path="/services" element={<ServicesPage />} />
         <Route path="/finance" element={<FinancePage />} />
         <Route path="/analytics" element={<AnalyticsPage />} />
+        <Route path="/reports" element={<ReportsPage />} />
         <Route path="/settings" element={<AdminRoute><SettingsPage /></AdminRoute>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

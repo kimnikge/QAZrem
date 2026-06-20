@@ -12,7 +12,11 @@ const createPaymentSchema = z.object({
   order_id: z.number().int().positive(),
   amount: z.number().positive('Сумма должна быть положительной'),
   payment_method_id: z.number().int().positive(),
-  is_prepayment: z.boolean().default(false)
+  is_prepayment: z.boolean().default(false),
+  splits: z.array(z.object({
+    account_id: z.number().int().positive(),
+    amount: z.number().positive()
+  })).optional()
 });
 
 // POST /payments — приём платежа
@@ -64,12 +68,33 @@ paymentsRouter.post('/', requireRole('admin', 'reception'), async (req, res, nex
 
     // Обновляем total_spent у клиента
     if (!input.is_prepayment) {
-      // Это доплата — заказ считается оплаченным полностью или частично
       await dbClient.query(
         `UPDATE clients SET total_spent = total_spent + $1
          WHERE id = (SELECT d.client_id FROM orders o JOIN devices d ON d.id = o.device_id WHERE o.id = $2)`,
         [input.amount, input.order_id]
       );
+    }
+
+    // Сплитование по кассам
+    const splits = input.splits || [];
+    if (splits.length > 0) {
+      const splitsTotal = splits.reduce((sum, s) => sum + s.amount, 0);
+      if (Math.abs(splitsTotal - input.amount) > 0.01) {
+        throw new BadRequestError(
+          `Сумма разбивки (${splitsTotal}) не совпадает с суммой платежа (${input.amount})`
+        );
+      }
+      const paymentId = payment.rows[0].id;
+      for (const s of splits) {
+        await dbClient.query(
+          'INSERT INTO payment_splits (payment_id, account_id, amount) VALUES ($1, $2, $3)',
+          [paymentId, s.account_id, s.amount]
+        );
+        await dbClient.query(
+          'UPDATE company_accounts SET balance = balance + $1 WHERE id = $2',
+          [s.amount, s.account_id]
+        );
+      }
     }
 
     await dbClient.query('COMMIT');
@@ -190,4 +215,23 @@ paymentsRouter.patch('/:id/refund', requireRole('admin'), async (req, res, next)
   } finally {
     dbClient.release();
   }
+});
+
+// GET /payments/refunds — список всех возвратов
+paymentsRouter.get('/refunds', requireRole('admin'), async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      `SELECT p.id, p.amount, p.refunded_at, p.refund_reason,
+        pm.name AS payment_method_name,
+        o.id AS order_id, c.name AS client_name
+      FROM payments p
+      JOIN payment_methods pm ON pm.id = p.payment_method_id
+      JOIN orders o ON o.id = p.order_id
+      JOIN devices d ON d.id = o.device_id
+      JOIN clients c ON c.id = d.client_id
+      WHERE p.refunded_at IS NOT NULL
+      ORDER BY p.refunded_at DESC LIMIT 100`
+    );
+    res.json(result.rows);
+  } catch (error) { next(error); }
 });

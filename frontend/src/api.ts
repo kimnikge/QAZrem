@@ -42,6 +42,18 @@ export type Client = {
   total_spent: string; created_at: string;
 };
 
+export function getClients(params?: { search?: string; limit?: number }) {
+  const query = new URLSearchParams();
+  if (params?.search) query.set('search', params.search);
+  if (params?.limit) query.set('limit', String(params.limit || 100));
+  const qs = query.toString();
+  return request<Client[]>(`/clients${qs ? `?${qs}` : ''}`);
+}
+
+export function getClient(id: number) {
+  return request<Client & { devices?: Array<{ brand: string; model: string; imei: string }> }>(`/clients/${id}`);
+}
+
 // --- Search ---
 export type Device = {
   id: number; client_id: number; brand: string; model: string;
@@ -119,17 +131,32 @@ export type Order = {
   group_name: string | null;
   location_id: number | null;
   location_name: string | null;
+  // Extended fields
+  password: string | null;
+  face_id: boolean;
+  completeness: string | null;
+  condition: string | null;
+  appearance: string | null;
+  manager_notes: string | null;
+  order_type: string;
+  image_url: string | null;
 };
 
 export type OrderListResponse = { orders: Order[]; total: number; limit: number; offset: number };
 
-export function getOrders(params?: { status?: string; search?: string; overdue?: string; my?: string; group_id?: string; limit?: number; offset?: number }) {
+export function getOrders(params?: { status?: string; search?: string; overdue?: string; my?: string; group_id?: string; master_id?: string; created_from?: string; created_to?: string; brand?: string; model?: string; client_id?: string; limit?: number; offset?: number }) {
   const query = new URLSearchParams();
   if (params?.status) query.set('status', params.status);
   if (params?.search) query.set('search', params.search);
   if (params?.overdue) query.set('overdue', params.overdue);
   if (params?.my) query.set('my', params.my);
   if (params?.group_id) query.set('group_id', params.group_id);
+  if (params?.master_id) query.set('master_id', params.master_id);
+  if (params?.created_from) query.set('created_from', params.created_from);
+  if (params?.created_to) query.set('created_to', params.created_to);
+  if (params?.brand) query.set('brand', params.brand);
+  if (params?.model) query.set('model', params.model);
+  if (params?.client_id) query.set('client_id', params.client_id);
   if (params?.limit) query.set('limit', String(params.limit));
   if (params?.offset) query.set('offset', String(params.offset));
   const qs = query.toString();
@@ -139,7 +166,8 @@ export function getOrders(params?: { status?: string; search?: string; overdue?:
 export type OrderDetail = Order & {
   history: Array<{ id: number; from_status_name: string | null; to_status_name: string; comment: string | null; user_name: string; created_at: string }>;
   parts: Array<{ id: number; part_name: string; sku: string; quantity_used: number; purchase_price_at_moment: string; selling_price_at_moment: string }>;
-  payments: Array<{ id: number; amount: string; payment_method_name: string; is_prepayment: boolean; created_at: string; refunded_at: string | null; refund_reason: string | null }>;
+  services: Array<{ service_id: number; service_name: string; quantity: number; price_at_moment: string; master_commission_pct_at_moment: number }>;
+  payments: Array<{ id: number; amount: string; payment_method_name: string; is_prepayment: boolean; created_at: string; refunded_at: string | null; refund_reason: string | null; splits?: Array<{ id: number; account_id: number; account_name: string; amount: string }> }>;
   group_name: string | null;
 };
 
@@ -158,8 +186,17 @@ export type CreateOrderInput = {
   estimated_cost?: number;
   discount?: number;
   parts?: Array<{ part_id: number; quantity: number }>;
+  services?: Array<{ service_id: number; quantity?: number }>;
   group_id?: number;
   location_id?: number;
+  password?: string;
+  face_id?: boolean;
+  completeness?: string;
+  condition?: string;
+  appearance?: string;
+  manager_notes?: string;
+  order_type?: 'paid' | 'warranty';
+  image_url?: string;
 };
 
 export function createOrder(input: CreateOrderInput) {
@@ -188,6 +225,14 @@ export function deleteOrderPart(orderId: number, partId: number) {
   return request(`/orders/${orderId}/parts/${partId}`, { method: 'DELETE' });
 }
 
+export function assignServiceToOrder(orderId: number, serviceId: number, quantity: number = 1) {
+  return request(`/orders/${orderId}/services`, { method: 'POST', body: JSON.stringify({ service_id: serviceId, quantity }) });
+}
+
+export function deleteOrderService(orderId: number, serviceId: number) {
+  return request(`/orders/${orderId}/services/${serviceId}`, { method: 'DELETE' });
+}
+
 // --- Parts ---
 export type Part = {
   id: number; name: string; sku: string; compatible_models: string[];
@@ -196,6 +241,23 @@ export type Part = {
 
 export function getParts(lowStock?: boolean) {
   return request<Part[]>(`/parts${lowStock ? '?low_stock=true' : ''}`);
+}
+
+export function writeoffPart(data: { part_id: number; quantity: number; document?: string }) {
+  return request<{ message: string }>('/parts/writeoff', { method: 'POST', body: JSON.stringify(data) });
+}
+
+export function getPartsSummary() {
+  return request<{ total_items: number; total_quantity: number; total_cost: string; total_value: string; low_stock_count: number }>('/parts/summary');
+}
+
+export function getPartMovements(params?: { part_id?: number; type?: string; limit?: number }) {
+  const query = new URLSearchParams();
+  if (params?.part_id) query.set('part_id', String(params.part_id));
+  if (params?.type) query.set('type', params.type);
+  if (params?.limit) query.set('limit', String(params.limit));
+  const qs = query.toString();
+  return request<{ movements: Array<{ id: number; part_name: string; sku: string; type: string; quantity: number; document: string | null; created_at: string }>; total: number }>(`/parts/movements${qs ? `?${qs}` : ''}`);
 }
 
 export type CreatePartInput = {
@@ -255,6 +317,7 @@ export type CreatePaymentInput = {
   amount: number;
   payment_method_id: number;
   is_prepayment?: boolean;
+  splits?: Array<{ account_id: number; amount: number }>;
 };
 
 export function createPayment(data: CreatePaymentInput) {
@@ -273,6 +336,10 @@ export function refundPayment(id: number, reason?: string) {
     method: 'PATCH',
     body: JSON.stringify({ reason })
   });
+}
+
+export function getRefunds() {
+  return request<Array<{ id: number; amount: string; refunded_at: string; refund_reason: string | null; payment_method_name: string; order_id: number; client_name: string }>>('/payments/refunds');
 }
 
 export type MasterPayout = {
@@ -524,4 +591,51 @@ export function previewPrintTemplate(orderId: number, templateId?: number) {
 
 export function samplePreviewPrintTemplate(content: string) {
   return request<{ html: string }>(`/print-templates/sample-preview?content=${encodeURIComponent(content)}`);
+}
+
+// ============================================================
+// Кассы и оплата (Cash accounts)
+// ============================================================
+
+export type CompanyAccount = {
+  id: number; name: string; type: string;
+  balance: string; is_active: boolean; sort_order: number;
+};
+
+export type CashTransfer = {
+  id: number;
+  from_account_id: number; from_account_name: string;
+  to_account_id: number; to_account_name: string;
+  amount: string; comment: string | null;
+  created_by: number; created_by_name: string;
+  created_at: string;
+};
+
+export type AccountTransaction = {
+  created_at: string; type: string; description: string;
+  income: string; outcome: string; balance: string;
+};
+
+export function getAccounts() {
+  return request<CompanyAccount[]>('/accounts');
+}
+
+export function createAccount(data: { name: string; type?: string }) {
+  return request<CompanyAccount>('/accounts', { method: 'POST', body: JSON.stringify(data) });
+}
+
+export function updateAccount(id: number, data: { name?: string; is_active?: boolean }) {
+  return request<{ message: string }>(`/accounts/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+}
+
+export function getAccountTransactions(id: number) {
+  return request<{ account: CompanyAccount; transactions: AccountTransaction[] }>(`/accounts/${id}/transactions`);
+}
+
+export function getTransfers() {
+  return request<CashTransfer[]>('/transfers');
+}
+
+export function createTransfer(data: { from_account_id: number; to_account_id: number; amount: number; comment?: string }) {
+  return request<CashTransfer>('/transfers', { method: 'POST', body: JSON.stringify(data) });
 }

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { pool } from '../db/pool.js';
-import { NotFoundError } from '../lib/errors.js';
+import { NotFoundError, BadRequestError } from '../lib/errors.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 
 export const partsRouter = Router();
@@ -206,4 +206,48 @@ partsRouter.post('/movement', requireRole('admin'), async (req, res, next) => {
   } finally {
     dbClient.release();
   }
+});
+
+// POST /parts/writeoff — списание запчасти (без привязки к заказу)
+partsRouter.post('/writeoff', requireRole('admin'), async (req, res, next) => {
+  const dbClient = await pool.connect();
+  try {
+    const input = movementSchema.parse(req.body);
+    await dbClient.query('BEGIN');
+
+    const part = await dbClient.query('SELECT id, name, quantity FROM parts WHERE id = $1 FOR UPDATE', [input.part_id]);
+    if (part.rows.length === 0) throw new NotFoundError('Запчасть');
+    if (part.rows[0].quantity < input.quantity) {
+      throw new BadRequestError(`Недостаточно на складе. Доступно: ${part.rows[0].quantity}`);
+    }
+
+    await dbClient.query('UPDATE parts SET quantity = quantity - $1 WHERE id = $2', [input.quantity, input.part_id]);
+    await dbClient.query(
+      `INSERT INTO part_movements (part_id, type, quantity, order_id, document)
+       VALUES ($1, 'writeoff', $2, $3, $4)`,
+      [input.part_id, input.quantity, input.order_id || null, input.document || null]
+    );
+
+    await dbClient.query('COMMIT');
+    res.json({ message: `Списано: "${part.rows[0].name}" ×${input.quantity}` });
+  } catch (error) {
+    await dbClient.query('ROLLBACK');
+    next(error);
+  } finally { dbClient.release(); }
+});
+
+// GET /parts/summary — сводка по складу
+partsRouter.get('/summary', requireRole('admin'), async (_req, res, next) => {
+  try {
+    const result = await pool.query(
+      `SELECT
+        COUNT(*)::int AS total_items,
+        COALESCE(SUM(quantity), 0)::int AS total_quantity,
+        COALESCE(SUM(purchase_price * quantity), 0) AS total_cost,
+        COALESCE(SUM(selling_price * quantity), 0) AS total_value,
+        COALESCE(COUNT(*) FILTER (WHERE quantity <= min_quantity), 0)::int AS low_stock_count
+      FROM parts`
+    );
+    res.json(result.rows[0]);
+  } catch (error) { next(error); }
 });

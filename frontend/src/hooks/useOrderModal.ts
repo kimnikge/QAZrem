@@ -33,7 +33,7 @@ export function useOrderModal({ orderId, preload, onOrderUpdated }: UseOrderModa
   const [editIssue, setEditIssue] = useState(preload?.issue_description || '');
 
   // Preload order
-  const preloadOrder: OrderDetail | null = preload ? { ...preload, history: [], parts: [], payments: [], group_name: preload.group_name || null } : null;
+  const preloadOrder: OrderDetail | null = preload ? { ...preload, history: [], parts: [], services: [], payments: [], group_name: preload.group_name || null } : null;
 
   // Сброс edit-полей из данных заказа (используется везде)
   function syncEditFields(o: OrderDetail) {

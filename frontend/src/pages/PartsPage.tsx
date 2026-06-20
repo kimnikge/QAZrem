@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Package, Plus, Save, ArrowDownToLine } from 'lucide-react';
-import { getParts, createPart, updatePart, receivePart, type Part } from '../api';
+import { getParts, createPart, updatePart, receivePart, writeoffPart, type Part } from '../api';
 import { useAuth } from '../context/AuthContext';
 
 export function PartsPage() {
@@ -19,6 +19,8 @@ export function PartsPage() {
   const [editData, setEditData] = useState({ name: '', sku: '', purchase_price: 0, selling_price: 0, min_quantity: 2 });
   const [receiveQty, setReceiveQty] = useState(0);
   const [receiveDoc, setReceiveDoc] = useState('');
+  const [writeoffQty, setWriteoffQty] = useState(0);
+  const [writeoffDoc, setWriteoffDoc] = useState('');
   const [saving, setSaving] = useState(false);
   const [receiving, setReceiving] = useState(false);
 
@@ -105,6 +107,18 @@ export function PartsPage() {
     } finally {
       setReceiving(false);
     }
+  }
+
+  async function handleWriteoff() {
+    if (!editPart || !writeoffQty) return;
+    setReceiving(true);
+    try {
+      await writeoffPart({ part_id: editPart.id, quantity: Math.round(Number(writeoffQty)), document: writeoffDoc || undefined });
+      setWriteoffQty(0); setWriteoffDoc('');
+      const data = await getParts();
+      setParts(data);
+    } catch (e) { console.error(e); }
+    finally { setReceiving(false); }
   }
 
   const lowStockParts = parts.filter(p => p.quantity <= p.min_quantity);
@@ -271,6 +285,29 @@ export function PartsPage() {
                 <ArrowDownToLine size={14} /> {receiving ? '...' : 'Оприходовать'}
               </button>
             </div>
+
+            {/* Списание */}
+            {isAdmin && (
+              <>
+                <h4 style={{ fontSize: 14, marginBottom: 8, marginTop: 20, color: '#ef4444' }}>Списать со склада</h4>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'end' }}>
+                  <div>
+                    <label style={{ fontSize: 13, color: '#5f6368', display: 'block', marginBottom: 4 }}>Количество</label>
+                    <input type="number" value={writeoffQty || ''} onChange={e => setWriteoffQty(Math.round(Number(e.target.value)))} placeholder="0"
+                      style={{ width: 100, padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14 }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 13, color: '#5f6368', display: 'block', marginBottom: 4 }}>Причина</label>
+                    <input value={writeoffDoc} onChange={e => setWriteoffDoc(e.target.value)} placeholder="Брак, утеря..."
+                      style={{ width: 160, padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14 }} />
+                  </div>
+                  <button onClick={handleWriteoff} disabled={receiving || !writeoffQty}
+                    style={{ padding: '8px 14px', fontSize: 13, background: '#ef4444', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' }}>
+                    {receiving ? '...' : 'Списать'}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

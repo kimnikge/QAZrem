@@ -1,17 +1,18 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Download } from 'lucide-react';
-import { getFinanceReport, getMasterPayouts, getAllUsers, type FinanceReport, type MasterPayoutsResponse } from '../api';
+import { getFinanceReport, getMasterPayouts, getAllUsers, getRefunds, type FinanceReport, type MasterPayoutsResponse } from '../api';
 import { FinancePeriodSelector } from '../components/FinancePeriodSelector';
 import { FinanceOverviewTab } from '../components/FinanceOverviewTab';
 import { FinancePayoutsTab } from '../components/FinancePayoutsTab';
+import { CashAccountsTab } from '../components/CashAccountsTab';
 import { FinanceModal } from '../components/FinanceModal';
 
 const apiUrl = import.meta.env.VITE_API_URL || '/api';
 const currentMonth = new Date().getMonth();
 const currentYear = new Date().getFullYear();
 
-type Tab = 'overview' | 'payouts';
+type Tab = 'overview' | 'payouts' | 'accounts' | 'refunds';
 type ModalType = 'income' | 'paid' | 'debt' | 'expenses' | 'profit' | null;
 type PeriodMode = 'month' | 'custom';
 
@@ -36,10 +37,13 @@ export function FinancePage() {
   const [loading, setLoading] = useState(true);
   const [masters, setMasters] = useState<Array<{ id: number; name: string }>>([]);
   const [modal, setModal] = useState<ModalType>(null);
+  const [refunds, setRefunds] = useState<Array<{ id: number; amount: string; refunded_at: string; refund_reason: string | null; payment_method_name: string; order_id: number; client_name: string }>>([]);
 
   useEffect(() => { getAllUsers().then(u => setMasters(u.filter(x => x.role === 'master'))).catch(() => {}); }, []);
+  useEffect(() => { if (tab === 'refunds') getRefunds().then(setRefunds).catch(console.error); }, [tab]);
 
   useEffect(() => {
+    if (tab === 'accounts') return;
     setLoading(true);
     const { from, to } = periodMode === 'custom' ? { from: customFrom, to: customTo } : getMonthRange(selMonth, selYear);
     if (tab === 'overview') {
@@ -58,6 +62,8 @@ export function FinancePage() {
         <div className="ro-tabs" style={{ flex: 1 }}>
           <button className={`ro-tab${tab === 'overview' ? ' active' : ''}`} onClick={() => setTab('overview')}>Общий отчёт</button>
           <button className={`ro-tab${tab === 'payouts' ? ' active' : ''}`} onClick={() => setTab('payouts')}>Расчёт мастерам</button>
+          <button className={`ro-tab${tab === 'accounts' ? ' active' : ''}`} onClick={() => setTab('accounts')}>Кассы</button>
+          <button className={`ro-tab${tab === 'refunds' ? ' active' : ''}`} onClick={() => setTab('refunds')}>Возвраты</button>
         </div>
         {tab === 'overview' && report && isAdmin && (
           <button className="btn-secondary" onClick={() => {
@@ -95,6 +101,38 @@ export function FinancePage() {
           )}
           <FinancePayoutsTab payouts={payouts} loading={loading} />
         </>
+      )}
+
+      {tab === 'accounts' && <CashAccountsTab isAdmin={isAdmin} />}
+
+      {tab === 'refunds' && (
+        <div style={{ background: 'var(--card-bg)', borderRadius: 10, border: '1px solid var(--border)', overflow: 'hidden', marginTop: 12 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: 'var(--bg)', borderBottom: '2px solid var(--border)' }}>
+                <th style={{ padding: '10px 14px', textAlign: 'left' }}>Дата</th>
+                <th style={{ padding: '10px 14px', textAlign: 'left' }}>Заказ</th>
+                <th style={{ padding: '10px 14px', textAlign: 'left' }}>Клиент</th>
+                <th style={{ padding: '10px 14px', textAlign: 'left' }}>Способ</th>
+                <th style={{ padding: '10px 14px', textAlign: 'right' }}>Сумма</th>
+                <th style={{ padding: '10px 14px', textAlign: 'left' }}>Причина</th>
+              </tr>
+            </thead>
+            <tbody>
+              {refunds.map(r => (
+                <tr key={r.id} style={{ borderBottom: '1px solid var(--bg)', opacity: 0.85 }}>
+                  <td style={{ padding: '10px 14px' }}>{new Date(r.refunded_at).toLocaleDateString('ru-RU')}</td>
+                  <td style={{ padding: '10px 14px' }}>№{r.order_id}</td>
+                  <td style={{ padding: '10px 14px' }}>{r.client_name}</td>
+                  <td style={{ padding: '10px 14px' }}>{r.payment_method_name}</td>
+                  <td style={{ padding: '10px 14px', textAlign: 'right', color: '#ef4444', fontWeight: 600 }}>−{Math.round(Number(r.amount)).toLocaleString('ru-RU')} ₸</td>
+                  <td style={{ padding: '10px 14px', color: '#5f6368' }}>{r.refund_reason || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {refunds.length === 0 && <div style={{ padding: 40, textAlign: 'center', color: '#9aa0a6' }}>Нет возвратов</div>}
+        </div>
       )}
 
       {modal && report && <FinanceModal type={modal} report={report} onClose={() => setModal(null)} />}

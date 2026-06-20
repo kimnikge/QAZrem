@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { BarChart3, ClipboardList, LogOut, Monitor, Package, Search, Settings, TrendingUp, Moon, Sun, Wrench } from 'lucide-react';
+import { BarChart3, ClipboardList, LogOut, Monitor, Package, Search, Settings, TrendingUp, Moon, Sun, Wrench, Users, FileText } from 'lucide-react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
@@ -8,8 +8,10 @@ const navItems = [
   { to: '/create-order', icon: Search, label: 'Новый заказ' },
   { to: '/parts', icon: Package, label: 'Склад' },
   { to: '/catalog', icon: Monitor, label: 'Каталог' },
+  { to: '/clients', icon: Users, label: 'Контакты' },
   { to: '/services', icon: Wrench, label: 'Услуги' },
   { to: '/finance', icon: TrendingUp, label: 'Финансы' },
+  { to: '/reports', icon: FileText, label: 'Отчёты', adminOnly: true },
   { to: '/analytics', icon: BarChart3, label: 'Аналитика' },
   { to: '/settings', icon: Settings, label: 'Настройки', adminOnly: true },
 ];

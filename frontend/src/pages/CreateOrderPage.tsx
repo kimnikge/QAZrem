@@ -54,6 +54,14 @@ export function CreateOrderPage() {
         parts: selectedParts.length > 0 ? selectedParts.map(p => ({ part_id: p.part_id, quantity: p.quantity })) : undefined,
         group_id: form.group_id || undefined,
         location_id: form.location_id || undefined,
+        password: form.password || undefined,
+        face_id: form.face_id,
+        completeness: form.completeness || undefined,
+        condition: form.condition || undefined,
+        appearance: form.appearance || undefined,
+        manager_notes: form.manager_notes || undefined,
+        order_type: form.order_type || undefined,
+        image_url: form.image_url || undefined,
         client: { ...form.client, email: form.client.email || undefined, address: form.client.address || undefined },
         device: { ...form.device, serial_number: form.device.serial_number || undefined, color: form.device.color || undefined },
       };
@@ -137,6 +145,10 @@ export function CreateOrderPage() {
             <input className="glass-input" placeholder="Серийный номер" value={form.device.serial_number || ''} onChange={e => setDevice('serial_number', e.target.value)} />
             <input className="glass-input" placeholder="Цвет" value={form.device.color || ''} onChange={e => setDevice('color', e.target.value)} />
           </div>
+          <div style={{ marginTop: 10 }}>
+            <input className="glass-input" placeholder="Ссылка на фото устройства (URL)" value={form.image_url || ''}
+              onChange={e => setForm(p => ({ ...p, image_url: e.target.value }))} />
+          </div>
           {groups.length > 0 && (
             <div style={{ marginTop: 10 }}>
               <label className="glass-label">Группа</label>
@@ -148,6 +160,45 @@ export function CreateOrderPage() {
           )}
           <textarea className="glass-textarea" placeholder="Описание неисправности *" value={form.issue_description}
             onChange={e => setForm(p => ({ ...p, issue_description: e.target.value }))} required rows={2} style={{ marginTop: 10 }} />
+
+          {/* Extended fields */}
+          <div className="glass-grid glass-grid-3" style={{ marginTop: 10 }}>
+            <input className="glass-input" placeholder="Пароль устройства" value={form.password || ''}
+              onChange={e => setForm(p => ({ ...p, password: e.target.value }))} />
+            <select className="glass-select" value={form.condition || ''}
+              onChange={e => setForm(p => ({ ...p, condition: e.target.value }))}>
+              <option value="">— Состояние —</option>
+              <option value="Отличное">Отличное</option>
+              <option value="Царапины">Царапины</option>
+              <option value="Потёртости">Потёртости</option>
+              <option value="Сколы">Сколы</option>
+              <option value="Вмятина">Вмятина</option>
+              <option value="Треснут экран">Треснут экран</option>
+              <option value="Разбит полностью">Разбит полностью</option>
+              <option value="Погнут">Погнут</option>
+            </select>
+            <select className="glass-select" value={form.order_type || 'paid'}
+              onChange={e => setForm(p => ({ ...p, order_type: e.target.value as 'paid' | 'warranty' }))}>
+              <option value="paid">Платный</option>
+              <option value="warranty">По гарантии</option>
+            </select>
+          </div>
+          <div className="glass-grid glass-grid-2" style={{ marginTop: 8 }}>
+            <input className="glass-input" placeholder="Комплектация" value={form.completeness || ''}
+              onChange={e => setForm(p => ({ ...p, completeness: e.target.value }))} />
+            <input className="glass-input" placeholder="Особый внешний вид" value={form.appearance || ''}
+              onChange={e => setForm(p => ({ ...p, appearance: e.target.value }))} />
+          </div>
+          <div style={{ marginTop: 8, display: 'flex', gap: 12, alignItems: 'center' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
+              <input type="checkbox" checked={form.face_id || false}
+                onChange={e => setForm(p => ({ ...p, face_id: e.target.checked }))} />
+              Face ID
+            </label>
+          </div>
+          <textarea className="glass-textarea" placeholder="Заметки менеджера (видны только сотрудникам)" value={form.manager_notes || ''}
+            onChange={e => setForm(p => ({ ...p, manager_notes: e.target.value }))} rows={2} style={{ marginTop: 8 }} />
+
         </div>
         <OrderParamsCard form={form} setForm={setForm} masters={masters} locations={locations} />
         </>)}

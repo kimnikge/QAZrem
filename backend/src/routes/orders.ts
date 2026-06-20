@@ -436,10 +436,17 @@ ordersRouter.get('/:id/statuses', async (req, res, next) => {
     if (order.rows.length === 0) throw new NotFoundError('Заказ');
 
     const currentSlug = order.rows[0].slug;
-    // Возвращаем все статусы, кроме текущего
+    const allowedSlugs = STATUS_TRANSITIONS[currentSlug] || [];
+
+    if (allowedSlugs.length === 0) {
+      return res.json({ current: currentSlug, available: [] });
+    }
+
+    // Возвращаем только допустимые статусы
+    const placeholders = allowedSlugs.map((_, i) => `$${i + 1}`).join(', ');
     const result = await pool.query(
-      `SELECT id, name, slug FROM order_statuses WHERE slug != $1 ORDER BY id`,
-      [currentSlug]
+      `SELECT id, name, slug FROM order_statuses WHERE slug IN (${placeholders}) ORDER BY id`,
+      allowedSlugs
     );
     res.json({ current: currentSlug, available: result.rows });
   } catch (error) {
@@ -867,15 +874,21 @@ ordersRouter.patch('/:id/status', requireRole('admin', 'master'), async (req, re
 
     // Получаем текущий статус заказа
     const order = await dbClient.query(
-      'SELECT o.status_id, os.slug AS current_slug, os.is_final FROM orders o JOIN order_statuses os ON os.id = o.status_id WHERE o.id = $1',
+      'SELECT o.status_id, o.cost, o.discount, os.slug AS current_slug, os.is_final FROM orders o JOIN order_statuses os ON os.id = o.status_id WHERE o.id = $1',
       [id]
     );
     if (order.rows.length === 0) throw new NotFoundError('Заказ');
 
-    const { current_slug, is_final } = order.rows[0];
+    const { current_slug, is_final, cost, discount } = order.rows[0];
 
     if (is_final) {
       throw new BadRequestError('Нельзя изменить статус финального заказа');
+    }
+
+    // Проверяем допустимость перехода
+    const allowedSlugs = STATUS_TRANSITIONS[current_slug] || [];
+    if (!allowedSlugs.includes(input.status_slug)) {
+      throw new BadRequestError(`Нельзя перевести заказ из статуса «${current_slug}» в «${input.status_slug}»`);
     }
 
     // Получаем ID нового статуса
@@ -887,6 +900,19 @@ ordersRouter.patch('/:id/status', requireRole('admin', 'master'), async (req, re
 
     const newStatusId = newStatus.rows[0].id;
     const newIsFinal = newStatus.rows[0].is_final;
+
+    // При переходе в completed проверяем, что заказ полностью оплачен
+    if (input.status_slug === 'completed') {
+      const paymentSum = await dbClient.query(
+        `SELECT COALESCE(SUM(amount), 0) AS total_paid FROM payments WHERE order_id = $1`,
+        [id]
+      );
+      const totalPaid = Math.round(Number(paymentSum.rows[0].total_paid));
+      const totalCost = Math.round(Number(cost)) - Math.round(Number(discount));
+      if (totalPaid < totalCost) {
+        throw new BadRequestError(`Нельзя выдать заказ: не полностью оплачен (оплачено ${totalPaid} из ${totalCost} ₸)`);
+      }
+    }
 
     // Обновляем статус
     let updateSql = 'UPDATE orders SET status_id = $1';

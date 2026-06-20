@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { type Order } from '../api';
-import { ORDER_STATUSES, STATUS_LABELS_SHORT, STATUS_CSS, STATUS_COLORS } from '../constants';
+import { STATUS_TRANSITIONS, STATUS_LABELS_SHORT, STATUS_CSS, STATUS_COLORS } from '../constants';
 
 export type ColumnKey = 'id' | 'status' | 'priority' | 'deadline' | 'client' | 'device' | 'issue' | 'master' | 'group' | 'cost';
 
@@ -60,7 +60,7 @@ export function DashboardTable({ orders, compact, colOrder, dragCol, statusDropd
           №{o.id}{o.is_overdue && <span className="ro-overdue-dot" title="Просрочен">!</span>}
         </td>;
       case 'status': {
-        const available = ORDER_STATUSES.filter(s => s !== o.status_slug);
+        const available = STATUS_TRANSITIONS[o.status_slug] || [];
         const isOpen = statusDropdownId === o.id;
         return <td key={key} style={{ position: 'relative' }}>
           <div className="ro-status-wrap">

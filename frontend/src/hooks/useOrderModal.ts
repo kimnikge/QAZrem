@@ -79,6 +79,19 @@ export function useOrderModal({ orderId, preload, onOrderUpdated }: UseOrderModa
   }, [editing]);
 
   async function handleStatus(slug: string) {
+    // Проверка: нельзя выдать неоплаченный заказ
+    if (slug === 'completed') {
+      // order может быть ещё не загружен — используем preloadOrder или текущий
+      const o = order || preloadOrder;
+      if (o) {
+        const finalCost = Math.max(0, Math.round(Number(o.cost)) - Math.round(Number(o.discount)));
+        const totalPaid = (o.payments || []).reduce((s: number, p: any) => s + Math.round(Number(p.amount)), 0);
+        if (totalPaid < finalCost) {
+          setError(`Нельзя выдать заказ: не полностью оплачен (оплачено ${totalPaid} из ${finalCost} ₸). Примите оплату в блоке ниже.`);
+          return;
+        }
+      }
+    }
     try {
       await updateOrderStatus(orderId, slug);
       const [o, s] = await Promise.all([getOrder(orderId), getOrderStatuses(orderId)]);

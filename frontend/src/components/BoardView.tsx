@@ -3,7 +3,7 @@ import { DndContext, type DragEndEvent, type DragStartEvent, PointerSensor, useS
 import { BoardColumn } from './BoardColumn';
 import { updateOrderStatus } from '../api';
 import type { Order } from '../api';
-import { ORDER_STATUSES } from '../constants';
+import { ORDER_STATUSES, STATUS_TRANSITIONS } from '../constants';
 
 interface Props {
   orders: Order[];
@@ -33,6 +33,10 @@ export function BoardView({ orders, onOrderUpdated, onCardOpen }: Props) {
     const order = orders.find(o => o.id === Number(orderId));
     if (!order) return;
     if (order.status_slug === newStatus) return;
+
+    // Проверяем допустимость перехода
+    const allowed = STATUS_TRANSITIONS[order.status_slug] || [];
+    if (!allowed.includes(newStatus)) return;
 
     try {
       await updateOrderStatus(Number(orderId), newStatus);

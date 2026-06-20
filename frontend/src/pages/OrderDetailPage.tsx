@@ -66,6 +66,18 @@ export function OrderDetailPage() {
   }
 
   async function handleStatusChange(slug: string) {
+    // Проверка: нельзя выдать неоплаченный заказ
+    if (slug === 'completed' && order) {
+      const finalCost = Math.max(0, Math.round(Number(order.cost)) - Math.round(Number(order.discount)));
+      const totalPaid = order.payments.reduce((s, p) => s + Math.round(Number(p.amount)), 0);
+      if (totalPaid < finalCost) {
+        setError(`Нельзя выдать заказ: не полностью оплачен (оплачено ${totalPaid} из ${finalCost} ₸). Примите оплату ниже.`);
+        // Прокрутка к блоку оплаты
+        const paymentCard = document.querySelector('.detail-card .order-payments-card');
+        if (paymentCard) paymentCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
+    }
     try { await updateOrderStatus(Number(id), slug); await load(); }
     catch (err) { setError(err instanceof Error ? err.message : 'Ошибка смены статуса'); }
   }

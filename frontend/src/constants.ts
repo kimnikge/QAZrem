@@ -48,6 +48,17 @@ export const STATUS_COLORS: Record<string, string> = {
   cancelled: '#ef4444',
 };
 
+/** Допустимые переходы между статусами (синхронизировано с backend) */
+export const STATUS_TRANSITIONS: Record<string, string[]> = {
+  new: ['diagnosis', 'cancelled'],
+  diagnosis: ['waiting_parts', 'repair', 'ready', 'cancelled'],
+  waiting_parts: ['repair', 'cancelled'],
+  repair: ['ready', 'cancelled'],
+  ready: ['completed', 'cancelled'],
+  completed: [],
+  cancelled: [],
+};
+
 /** CSS-классы статусов */
 export const STATUS_CSS: Record<string, string> = {
   new: 's-new',

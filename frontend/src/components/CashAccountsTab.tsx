@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, ArrowRightLeft, TrendingUp, TrendingDown } from 'lucide-react';
+import { Plus, Minus, ArrowRightLeft, TrendingUp, TrendingDown } from 'lucide-react';
 import { getAccounts, getAccountTransactions, createAccount, type CompanyAccount, type AccountTransaction } from '../api';
 import { CashTransferModal } from './CashTransferModal';
 import { CashOperationModal } from './CashOperationModal';
@@ -54,28 +54,9 @@ export function CashAccountsTab({ isAdmin }: Props) {
             <button onClick={() => setShowOperation('income')} className="btn-icon" title="Приход" style={{ color: '#22c55e' }}><TrendingUp size={16} /></button>
             <button onClick={() => setShowOperation('expense')} className="btn-icon" title="Расход" style={{ color: '#ef4444' }}><TrendingDown size={16} /></button>
             <button onClick={() => setShowTransfer(true)} className="btn-icon" title="Перемещение"><ArrowRightLeft size={16} /></button>
-            {isAdmin && <button onClick={() => setShowCreate(true)} className="btn-icon" title="Добавить кассу"><Plus size={16} /></button>}
+            <button onClick={() => setShowOperation('expense')} className="btn-icon" title="Изъятие из кассы" style={{ color: '#ef4444' }}><Minus size={16} /></button>
           </div>
         </div>
-
-        {showCreate && (
-          <div style={{ marginBottom: 8, padding: 8, background: 'var(--bg)', borderRadius: 8 }}>
-            <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Название кассы"
-              style={{ width: '100%', padding: '6px 8px', border: '1px solid var(--border)', borderRadius: 4, fontSize: 12, marginBottom: 6 }} />
-            <select value={newType} onChange={e => setNewType(e.target.value)}
-              style={{ width: '100%', padding: '6px 8px', border: '1px solid var(--border)', borderRadius: 4, fontSize: 12, marginBottom: 6 }}>
-              <option value="cash">Наличные</option>
-              <option value="kaspi">Kaspi</option>
-              <option value="bank">Банк</option>
-              <option value="terminal">Терминал</option>
-              <option value="virtual">Виртуальный</option>
-            </select>
-            <div style={{ display: 'flex', gap: 4 }}>
-              <button onClick={handleCreate} className="btn-primary" style={{ flex: 1, padding: '4px 8px', fontSize: 12 }}>Создать</button>
-              <button onClick={() => setShowCreate(false)} style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 4, padding: '4px 8px', fontSize: 12, cursor: 'pointer' }}>Отмена</button>
-            </div>
-          </div>
-        )}
 
         {accounts.map(a => (
           <div key={a.id} onClick={() => loadTransactions(a.id)}
@@ -90,6 +71,36 @@ export function CashAccountsTab({ isAdmin }: Props) {
             </div>
           </div>
         ))}
+
+        {/* Кнопка добавления кассы — всегда внизу списка */}
+        {isAdmin && (
+          <div style={{ marginTop: 8 }}>
+            {showCreate && (
+              <div style={{ marginBottom: 8, padding: 8, background: 'var(--bg)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Название кассы"
+                  style={{ width: '100%', padding: '6px 8px', border: '1px solid var(--border)', borderRadius: 4, fontSize: 12, marginBottom: 6 }} />
+                <select value={newType} onChange={e => setNewType(e.target.value)}
+                  style={{ width: '100%', padding: '6px 8px', border: '1px solid var(--border)', borderRadius: 4, fontSize: 12, marginBottom: 6 }}>
+                  <option value="cash">Наличные</option>
+                  <option value="kaspi">Kaspi</option>
+                  <option value="bank">Банк</option>
+                  <option value="terminal">Терминал</option>
+                  <option value="virtual">Виртуальный</option>
+                </select>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  <button onClick={handleCreate} className="btn-primary" style={{ flex: 1, padding: '4px 8px', fontSize: 12 }}>Создать</button>
+                  <button onClick={() => setShowCreate(false)} style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 4, padding: '4px 8px', fontSize: 12, cursor: 'pointer' }}>Отмена</button>
+                </div>
+              </div>
+            )}
+            {!showCreate && (
+              <button onClick={() => setShowCreate(true)}
+                style={{ width: '100%', padding: '8px', background: 'none', border: '2px dashed var(--border)', borderRadius: 8, cursor: 'pointer', color: 'var(--primary)', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                <Plus size={14} /> Добавить кассу
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* История операций */}

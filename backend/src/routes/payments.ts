@@ -159,6 +159,51 @@ paymentsRouter.delete('/:id', requireRole('admin'), async (req, res, next) => {
   }
 });
 
+// PATCH /payments/:id — обновление способа оплаты
+const updatePaymentSchema = z.object({
+  payment_method_id: z.number().int().positive()
+});
+
+paymentsRouter.patch('/:id', requireRole('admin', 'reception'), async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) throw new BadRequestError('Некорректный ID платежа');
+    const { payment_method_id } = updatePaymentSchema.parse(req.body);
+
+    // Проверяем существование платежа
+    const payResult = await pool.query(
+      'SELECT id, refunded_at FROM payments WHERE id = $1',
+      [id]
+    );
+    if (payResult.rows.length === 0) throw new NotFoundError('Платёж');
+    if (payResult.rows[0].refunded_at) {
+      throw new BadRequestError('Нельзя изменить возвращённый платёж');
+    }
+
+    // Проверяем существование метода оплаты
+    const methodResult = await pool.query(
+      'SELECT id FROM payment_methods WHERE id = $1',
+      [payment_method_id]
+    );
+    if (methodResult.rows.length === 0) throw new NotFoundError('Способ оплаты');
+
+    // Обновляем способ оплаты и сбрасываем разбивку по кассам (т.к. кассы привязаны к способу)
+    await pool.query('BEGIN');
+    await pool.query(
+      'UPDATE payments SET payment_method_id = $1 WHERE id = $2',
+      [payment_method_id, id]
+    );
+    // Удаляем старые сплиты — баланс касс корректируется через удаление/создание платежа
+    await pool.query('DELETE FROM payment_splits WHERE payment_id = $1', [id]);
+    await pool.query('COMMIT');
+
+    res.json({ success: true, payment_method_id });
+  } catch (error) {
+    await pool.query('ROLLBACK').catch(() => {});
+    next(error);
+  }
+});
+
 // PATCH /payments/:id/refund — возврат платежа
 const refundSchema = z.object({
   reason: z.string().optional()

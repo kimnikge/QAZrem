@@ -3,14 +3,12 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Printer, RefreshCw, Save } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { getOrder, getOrderStatuses, updateOrderStatus, updateOrder, getSettings, getOrderGroups,
-  getServices, assignServiceToOrder, deleteOrderService,
-  type OrderDetail, type AvailableStatus, type SettingsData, type OrderGroup, type Service } from '../api';
+  type OrderDetail, type AvailableStatus, type SettingsData, type OrderGroup } from '../api';
 import { OrderInfoCard } from '../components/OrderInfoCard';
 import { OrderPaymentsCard } from '../components/OrderPaymentsCard';
 import { OrderPartsSection } from '../components/OrderPartsSection';
 import { STATUS_LABELS } from '../constants';
 import { buildOrderPatchBody } from '../utils';
-import { Plus, Trash2 } from 'lucide-react';
 
 export function OrderDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -29,9 +27,6 @@ export function OrderDetailPage() {
   const [editGroupId, setEditGroupId] = useState('');
   const [settings, setSettings] = useState<SettingsData | null>(null);
   const [groups, setGroups] = useState<OrderGroup[]>([]);
-  const [allServices, setAllServices] = useState<Service[]>([]);
-  const [showAddService, setShowAddService] = useState(false);
-  const [newServiceId, setNewServiceId] = useState('');
 
   async function load() {
     if (!id) return;
@@ -45,7 +40,6 @@ export function OrderDetailPage() {
       setEditGroupId(o.group_id ? String(o.group_id) : '');
       getSettings().then(setSettings).catch(() => {});
       getOrderGroups().then(setGroups).catch(() => {});
-      getServices().then(setAllServices).catch(() => {});
     } catch (err) { setError(err instanceof Error ? err.message : 'Ошибка загрузки'); }
     finally { setLoading(false); }
   }
@@ -80,18 +74,6 @@ export function OrderDetailPage() {
     }
     try { await updateOrderStatus(Number(id), slug); await load(); }
     catch (err) { setError(err instanceof Error ? err.message : 'Ошибка смены статуса'); }
-  }
-
-  async function handleAddService() {
-    if (!newServiceId) return;
-    try { await assignServiceToOrder(Number(id), Number(newServiceId)); setNewServiceId(''); setShowAddService(false); await load(); }
-    catch (err) { setError(err instanceof Error ? err.message : 'Ошибка добавления услуги'); }
-  }
-
-  async function handleRemoveService(sid: number) {
-    if (!confirm('Убрать услугу из заказа?')) return;
-    try { await deleteOrderService(Number(id), sid); await load(); }
-    catch (err) { setError(err instanceof Error ? err.message : 'Ошибка удаления услуги'); }
   }
 
   if (loading) return <div className="loading">Загрузка...</div>;
@@ -160,40 +142,9 @@ export function OrderDetailPage() {
           </div>
         )}
 
-        {/* Запчасти и услуги — показывать всегда */}
+        {/* Запчасти и услуги */}
         <div className="detail-card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h3>Запчасти и услуги</h3>
-            <button className="btn-icon" onClick={() => setShowAddService(!showAddService)} title="Добавить услугу"><Plus size={16} /></button>
-          </div>
-          {showAddService && (
-            <div style={{ display: 'flex', gap: 6, marginBottom: 8, marginTop: 4 }}>
-              <select value={newServiceId} onChange={e => setNewServiceId(e.target.value)}
-                style={{ flex: 1, padding: '6px 8px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 12 }}>
-                <option value="">— Выберите услугу —</option>
-                {allServices.map(s => <option key={s.id} value={s.id}>{s.name} ({s.price} ₸)</option>)}
-              </select>
-              <button className="btn-primary" onClick={handleAddService} disabled={!newServiceId} style={{ padding: '4px 10px', fontSize: 12 }}>Добавить</button>
-            </div>
-          )}
-          {order.parts.length === 0 && order.services.length === 0 ? (
-            <div style={{ fontSize: 12, color: '#9aa0a6' }}>Нет запчастей и услуг</div>
-          ) : (
-            <>
-              {order.parts.map(p => (
-                <div key={`p-${p.id}`} className="detail-row"><span>🔧 {p.part_name} ×{p.quantity_used}</span><strong>{Math.round(Number(p.selling_price_at_moment))} ₸</strong></div>
-              ))}
-              {order.services.map(s => (
-                <div key={`s-${s.service_id}`} className="detail-row">
-                  <span>🛠 {s.service_name} ×{s.quantity}</span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <strong>{Math.round(Number(s.price_at_moment))} ₸</strong>
-                    <button onClick={() => handleRemoveService(s.service_id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: 1, display: 'flex' }} title="Убрать"><Trash2 size={13} /></button>
-                  </div>
-                </div>
-              ))}
-            </>
-          )}
+          <OrderPartsSection orderId={order.id} initialParts={order.parts} initialServices={order.services} onRefresh={load} onError={setError} />
         </div>
       </div>
     </div>

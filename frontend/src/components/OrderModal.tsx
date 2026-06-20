@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { X, Printer, Edit3, Save, Loader2, PlusCircle } from 'lucide-react';
 import { useState, useEffect } from 'react';
-import { type Order, createPayment, getAccounts, type CompanyAccount } from '../api';
+import { type Order, createPayment, updatePayment, getAccounts, type CompanyAccount } from '../api';
 import { useOrderModal } from '../hooks/useOrderModal';
 import { OrderPartsSection } from './OrderPartsSection';
 import { STATUS_LABELS } from '../constants';
@@ -23,6 +23,7 @@ export function OrderModal({ orderId, preload, onClose, onOrderUpdated }: Props)
   const [payMethod, setPayMethod] = useState<number>(1);
   const [paying, setPaying] = useState(false);
   const [splitRows, setSplitRows] = useState<Array<{ account_id: number; amount: number }>>([]);
+  const [editingPaymentId, setEditingPaymentId] = useState<number | null>(null);
   const splitsTotal = splitRows.reduce((s, r) => s + r.amount, 0);
 
   useEffect(() => { getAccounts().then(setAccounts).catch(() => {}); }, []);
@@ -37,6 +38,14 @@ export function OrderModal({ orderId, preload, onClose, onOrderUpdated }: Props)
       setPayAmount(String(splitsTotal));
     }
   }, [splitsTotal]);
+
+  async function handleUpdateMethod(paymentId: number, newMethodId: number) {
+    setEditingPaymentId(null);
+    try {
+      await updatePayment(paymentId, newMethodId);
+      m.refresh();
+    } catch (err) { m.setError(err instanceof Error ? err.message : 'Ошибка обновления способа оплаты'); }
+  }
 
   return (
     <div className="modal-overlay" onClick={() => { if (!m.editing) onClose(); }}>
@@ -123,7 +132,7 @@ export function OrderModal({ orderId, preload, onClose, onOrderUpdated }: Props)
               <div className="modal-section"><div className="modal-field"><span className="modal-label">Комментарий</span><span className="modal-value" style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>{order.internal_comment}</span></div></div>
             ) : null}
 
-            <OrderPartsSection orderId={order.id} initialParts={order.parts} onRefresh={m.refresh} onError={m.setError} />
+            <OrderPartsSection orderId={order.id} initialParts={order.parts} initialServices={order.services} onRefresh={m.refresh} onError={m.setError} />
 
             {/* Блок оплаты — если есть остаток */}
             {remaining > 0 && !m.editing && (
@@ -178,12 +187,12 @@ export function OrderModal({ orderId, preload, onClose, onOrderUpdated }: Props)
                       <div key={i} style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 3 }}>
                         <select value={r.account_id} onChange={e => {
                           setSplitRows(prev => prev.map((s, j) => j === i ? { ...s, account_id: Number(e.target.value) } : s));
-                        }} style={{ flex: 1, padding: '3px 4px', border: '1px solid var(--border)', borderRadius: 4, fontSize: 11, background: 'var(--card-bg)' }}>
+                        }} style={{ flex: 2, minWidth: 70, padding: '3px 4px', border: '1px solid var(--border)', borderRadius: 4, fontSize: 11, background: 'var(--card-bg)' }}>
                           {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
                         </select>
                         <input type="number" value={r.amount || ''}
                           onChange={e => setSplitRows(prev => prev.map((s, j) => j === i ? { ...s, amount: Math.round(Number(e.target.value) || 0) } : s))}
-                          style={{ width: 65, padding: '3px 5px', border: '1px solid var(--border)', borderRadius: 4, fontSize: 11, textAlign: 'right' }} />
+                          style={{ flex: 1, minWidth: 50, padding: '3px 5px', border: '1px solid var(--border)', borderRadius: 4, fontSize: 11, textAlign: 'right' }} />
                         <button type="button" onClick={() => setSplitRows(prev => prev.filter((_, j) => j !== i))}
                           style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 14, padding: 0, lineHeight: 1 }} disabled={splitRows.length <= 1}>×</button>
                       </div>
@@ -204,7 +213,30 @@ export function OrderModal({ orderId, preload, onClose, onOrderUpdated }: Props)
                 {order.payments.map(p => (
                   <div key={p.id} className="modal-field" style={{ opacity: p.refunded_at ? 0.5 : 1 }}>
                     <span className="modal-label">
-                      {p.payment_method_name} {p.is_prepayment ? '(аванс)' : ''}
+                      {editingPaymentId === p.id ? (
+                        <select
+                          value={p.payment_method_id}
+                          onChange={e => handleUpdateMethod(p.id, Number(e.target.value))}
+                          onBlur={() => setEditingPaymentId(null)}
+                          autoFocus
+                          style={{ padding: '2px 4px', border: '1px solid var(--primary)', borderRadius: 4, fontSize: 11, background: 'var(--card-bg)', color: 'var(--text)' }}
+                        >
+                          <option value={1}>Наличные</option>
+                          <option value={2}>Карта</option>
+                          <option value={3}>Перевод</option>
+                        </select>
+                      ) : (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          {p.payment_method_name} {p.is_prepayment ? '(аванс)' : ''}
+                          {!p.refunded_at && (
+                            <button onClick={() => setEditingPaymentId(editingPaymentId === p.id ? null : p.id)}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--primary)', padding: 0, display: 'inline-flex', verticalAlign: 'middle' }}
+                              title="Сменить способ оплаты">
+                              <Edit3 size={11} />
+                            </button>
+                          )}
+                        </span>
+                      )}
                       {p.splits && p.splits.length > 0 && (
                         <span style={{ fontSize: 10, color: '#5f6368', marginLeft: 4 }}>
                           {p.splits.map(s => `${s.account_name}: ${Math.round(Number(s.amount))} ₸`).join(', ')}

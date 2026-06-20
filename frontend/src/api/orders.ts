@@ -58,7 +58,7 @@ export type OrderDetail = Order & {
   history: Array<{ id: number; from_status_name: string | null; to_status_name: string; comment: string | null; user_name: string; created_at: string }>;
   parts: Array<{ id: number; part_name: string; sku: string; quantity_used: number; purchase_price_at_moment: string; selling_price_at_moment: string }>;
   services: Array<{ service_id: number; service_name: string; quantity: number; price_at_moment: string; master_commission_pct_at_moment: number }>;
-  payments: Array<{ id: number; amount: string; payment_method_name: string; is_prepayment: boolean; created_at: string; refunded_at: string | null; refund_reason: string | null; splits?: Array<{ id: number; account_id: number; account_name: string; amount: string }> }>;
+  payments: Array<{ id: number; amount: string; payment_method_id: number; payment_method_name: string; is_prepayment: boolean; created_at: string; refunded_at: string | null; refund_reason: string | null; splits?: Array<{ id: number; account_id: number; account_name: string; amount: string }> }>;
   group_name: string | null;
 };
 

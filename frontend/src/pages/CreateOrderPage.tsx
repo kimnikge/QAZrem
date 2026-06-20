@@ -23,6 +23,7 @@ export function CreateOrderPage() {
   const [error, setError] = useState('');
   const [tab, setTab] = useState<'general' | 'parts'>('general');
   const [selectedParts, setSelectedParts] = useState<Array<{ part_id: number; quantity: number; name: string; sku: string; selling_price: string }>>([]);
+  const [selectedServices, setSelectedServices] = useState<Array<{ service_id: number; quantity: number; name: string; price: string }>>([]);
 
   useEffect(() => {
     getMasters().then(setMasters).catch(() => {});
@@ -52,6 +53,7 @@ export function CreateOrderPage() {
         priority: (form.priority as 'normal' | 'urgent' | 'critical') || undefined,
         source: form.source,
         parts: selectedParts.length > 0 ? selectedParts.map(p => ({ part_id: p.part_id, quantity: p.quantity })) : undefined,
+        services: selectedServices.length > 0 ? selectedServices.map(s => ({ service_id: s.service_id, quantity: s.quantity })) : undefined,
         group_id: form.group_id || undefined,
         location_id: form.location_id || undefined,
         password: form.password || undefined,
@@ -86,7 +88,7 @@ export function CreateOrderPage() {
       <form onSubmit={(e) => handleSubmit(e, 'create_open')} className="glass-form">
         <div className="glass-tabs">
           <button type="button" className={'glass-tab' + (tab === 'general' ? ' active' : '')} onClick={() => setTab('general')}><FileText size={16} /> Основное</button>
-          <button type="button" className={'glass-tab' + (tab === 'parts' ? ' active' : '')} onClick={() => setTab('parts')}><Wrench size={16} /> Запчасти и услуги{selectedParts.length > 0 && <span className="ro-tab-count">{selectedParts.length}</span>}</button>
+          <button type="button" className={'glass-tab' + (tab === 'parts' ? ' active' : '')} onClick={() => setTab('parts')}><Wrench size={16} /> Запчасти и услуги{(selectedParts.length + selectedServices.length) > 0 && <span className="ro-tab-count">{selectedParts.length + selectedServices.length}</span>}</button>
         </div>
         {tab === 'general' && (<>
         <div className="glass-card">
@@ -202,7 +204,7 @@ export function CreateOrderPage() {
         </div>
         <OrderParamsCard form={form} setForm={setForm} masters={masters} locations={locations} />
         </>)}
-        {tab === 'parts' && <OrderPartsTab selectedParts={selectedParts} onPartsChange={setSelectedParts} />}
+        {tab === 'parts' && <OrderPartsTab selectedParts={selectedParts} onPartsChange={setSelectedParts} selectedServices={selectedServices} onServicesChange={setSelectedServices} />}
         <div className="glass-actions">
           <button type="button" className="glass-btn glass-btn-ghost" onClick={() => navigate('/')}>Отмена</button>
           <button type="button" className="glass-btn glass-btn-secondary" onClick={(e) => handleSubmit(e, 'create_new')}><Plus size={16} /> Сохранить и создать ещё</button>

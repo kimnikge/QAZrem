@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { PlusCircle, Trash2 } from 'lucide-react';
-import { createPayment, deletePayment, refundPayment, getAccounts, type OrderDetail, type SettingsData, type CompanyAccount } from '../api';
+import { PlusCircle, Trash2, Edit3 } from 'lucide-react';
+import { createPayment, deletePayment, updatePayment, refundPayment, getAccounts, type OrderDetail, type SettingsData, type CompanyAccount } from '../api';
 
 interface Props {
   order: OrderDetail;
@@ -19,6 +19,7 @@ export function OrderPaymentsCard({ order, settings, userRole, onRefresh, onErro
   const [saving, setSaving] = useState(false);
   const [accounts, setAccounts] = useState<CompanyAccount[]>([]);
   const [splitRows, setSplitRows] = useState<Array<{ account_id: number; amount: number }>>([]);
+  const [editingPaymentId, setEditingPaymentId] = useState<number | null>(null);
   const splitsTotal = splitRows.reduce((s, r) => s + r.amount, 0);
 
   useEffect(() => { getAccounts().then(setAccounts).catch(() => {}); }, []);
@@ -58,6 +59,12 @@ export function OrderPaymentsCard({ order, settings, userRole, onRefresh, onErro
     if (reason === null) return;
     try { await refundPayment(paymentId, reason || undefined); onRefresh(); }
     catch (err) { onError(err instanceof Error ? err.message : 'Ошибка возврата'); }
+  }
+
+  async function handleUpdateMethod(paymentId: number, newMethodId: number) {
+    setEditingPaymentId(null);
+    try { await updatePayment(paymentId, newMethodId); onRefresh(); }
+    catch (err) { onError(err instanceof Error ? err.message : 'Ошибка обновления способа оплаты'); }
   }
 
   return (
@@ -107,12 +114,12 @@ export function OrderPaymentsCard({ order, settings, userRole, onRefresh, onErro
                 <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 4 }}>
                   <select value={r.account_id} onChange={e => {
                     setSplitRows(prev => prev.map((s, j) => j === i ? { ...s, account_id: Number(e.target.value) } : s));
-                  }} style={{ flex: 1, padding: '4px 6px', border: '1px solid var(--border)', borderRadius: 4, fontSize: 12, background: 'var(--card-bg)' }}>
+                  }} style={{ flex: 2, minWidth: 80, padding: '4px 6px', border: '1px solid var(--border)', borderRadius: 4, fontSize: 12, background: 'var(--card-bg)' }}>
                     {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
                   </select>
                   <input type="number" value={r.amount || ''}
                     onChange={e => setSplitRows(prev => prev.map((s, j) => j === i ? { ...s, amount: Math.round(Number(e.target.value) || 0) } : s))}
-                    placeholder="0" style={{ width: 80, padding: '4px 6px', border: '1px solid var(--border)', borderRadius: 4, fontSize: 12, textAlign: 'right' }} />
+                    placeholder="0" style={{ flex: 1, minWidth: 60, padding: '4px 6px', border: '1px solid var(--border)', borderRadius: 4, fontSize: 12, textAlign: 'right' }} />
                   <button type="button" onClick={() => setSplitRows(prev => prev.filter((_, j) => j !== i))}
                     style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 16, padding: 0, lineHeight: 1 }} disabled={splitRows.length <= 1}>×</button>
                 </div>
@@ -130,11 +137,31 @@ export function OrderPaymentsCard({ order, settings, userRole, onRefresh, onErro
       {order.payments.length > 0 && order.payments.map(p => (
         <div key={p.id} className="detail-row" style={{ opacity: p.refunded_at ? 0.5 : 1 }}>
           <span>
-            {p.payment_method_name} {p.is_prepayment ? '(предоплата)' : '(доплата)'}
+            {editingPaymentId === p.id ? (
+              <select
+                value={p.payment_method_id}
+                onChange={e => handleUpdateMethod(p.id, Number(e.target.value))}
+                onBlur={() => setEditingPaymentId(null)}
+                autoFocus
+                style={{ padding: '2px 4px', border: '1px solid var(--primary)', borderRadius: 4, fontSize: 12, background: 'var(--card-bg)', color: 'var(--text)' }}
+              >
+                {settings?.payment_methods.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </select>
+            ) : (
+              <>
+                {p.payment_method_name} {p.is_prepayment ? '(предоплата)' : '(доплата)'}
+              </>
+            )}
             {p.refunded_at && <span style={{ color: '#ef4444', fontSize: 11, marginLeft: 6 }}>↩ Возврат {new Date(p.refunded_at).toLocaleDateString()}{p.refund_reason && ` — ${p.refund_reason}`}</span>}
           </span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <strong style={{ textDecoration: p.refunded_at ? 'line-through' : 'none' }}>{Math.round(Number(p.amount))} ₸</strong>
+            {!p.refunded_at && (
+              <button onClick={() => setEditingPaymentId(editingPaymentId === p.id ? null : p.id)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--primary)', padding: 2, display: 'flex', fontSize: 13 }} title="Сменить способ оплаты">
+                <Edit3 size={13} />
+              </button>
+            )}
             {userRole === 'admin' && !p.refunded_at && (
               <>
                 <button onClick={() => handleRefund(p.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#f59e0b', padding: 2, display: 'flex', fontSize: 13 }} title="Возврат">↩</button>

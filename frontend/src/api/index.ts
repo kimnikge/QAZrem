@@ -38,7 +38,7 @@ export {
   type FinanceReport, type CreatePaymentInput,
   type MasterPayout, type MasterPayoutsResponse,
   getFinanceReport, getMasterPayouts,
-  createPayment, deletePayment, refundPayment, getRefunds,
+  createPayment, deletePayment, updatePayment, refundPayment, getRefunds,
 } from './finance';
 
 export {

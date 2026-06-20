@@ -50,6 +50,13 @@ export function deletePayment(id: number) {
   return request(`/payments/${id}`, { method: 'DELETE' });
 }
 
+export function updatePayment(id: number, payment_method_id: number) {
+  return request<{ success: boolean; payment_method_id: number }>(`/payments/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ payment_method_id })
+  });
+}
+
 export function refundPayment(id: number, reason?: string) {
   return request<{ success: boolean }>(`/payments/${id}/refund`, {
     method: 'PATCH',

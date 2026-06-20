@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { pool } from '../db/pool.js';
-import { NotFoundError } from '../lib/errors.js';
+import { NotFoundError, BadRequestError } from '../lib/errors.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 
 export const accountsRouter = Router();
@@ -55,6 +55,52 @@ accountsRouter.patch('/:id', requireRole('admin'), async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
+// POST /accounts/:id/operations — ручной приход/расход по кассе
+accountsRouter.post('/:id/operations', async (req, res, next) => {
+  const dbClient = await pool.connect();
+  try {
+    const accountId = Number(req.params.id);
+    const { type, amount, description } = z.object({
+      type: z.enum(['income', 'expense']),
+      amount: z.number().positive('Сумма должна быть положительной'),
+      description: z.string().optional()
+    }).parse(req.body);
+
+    // Проверка существования кассы
+    const acc = await dbClient.query('SELECT id, balance FROM company_accounts WHERE id = $1 FOR UPDATE', [accountId]);
+    if (acc.rows.length === 0) throw new NotFoundError('Касса');
+
+    // Для расхода — проверить что баланс не уйдёт в минус
+    if (type === 'expense' && Number(acc.rows[0].balance) < amount) {
+      throw new BadRequestError('Недостаточно средств в кассе');
+    }
+
+    await dbClient.query('BEGIN');
+
+    // Обновить баланс
+    if (type === 'income') {
+      await dbClient.query('UPDATE company_accounts SET balance = balance + $1 WHERE id = $2', [amount, accountId]);
+    } else {
+      await dbClient.query('UPDATE company_accounts SET balance = balance - $1 WHERE id = $2', [amount, accountId]);
+    }
+
+    // Записать операцию
+    const result = await dbClient.query(
+      `INSERT INTO cash_operations (account_id, type, amount, description, created_by)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [accountId, type, amount, description || null, req.user!.userId]
+    );
+
+    await dbClient.query('COMMIT');
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    await dbClient.query('ROLLBACK');
+    next(error);
+  } finally {
+    dbClient.release();
+  }
+});
+
 // GET /accounts/:id/transactions — история операций по кассе
 accountsRouter.get('/:id/transactions', async (req, res, next) => {
   try {
@@ -100,8 +146,21 @@ accountsRouter.get('/:id/transactions', async (req, res, next) => {
       [id]
     );
 
+    // Ручные операции (приход/расход)
+    const manualOps = await pool.query(
+      `SELECT co.created_at,
+        CASE WHEN co.type = 'income' THEN 'manual_income' ELSE 'manual_expense' END AS type,
+        COALESCE(co.description, CASE WHEN co.type = 'income' THEN 'Ручной приход' ELSE 'Ручной расход' END) AS description,
+        CASE WHEN co.type = 'income' THEN co.amount ELSE 0 END AS income,
+        CASE WHEN co.type = 'expense' THEN co.amount ELSE 0 END AS outcome
+      FROM cash_operations co
+      WHERE co.account_id = $1
+      ORDER BY co.created_at`,
+      [id]
+    );
+
     // Объединить и вычислить running balance
-    const all = [...payments.rows, ...transfersIn.rows, ...transfersOut.rows]
+    const all = [...payments.rows, ...transfersIn.rows, ...transfersOut.rows, ...manualOps.rows]
       .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 
     let balance = 0;

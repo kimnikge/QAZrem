@@ -95,6 +95,18 @@ const assignPartsSchema = z.object({
   quantity: z.number().int().positive()
 });
 
+// Пересчёт стоимости заказа на основе запчастей и услуг
+async function recalcOrderCost(client: import('pg').PoolClient | typeof pool, orderId: number): Promise<void> {
+  const result = await client.query(
+    `SELECT
+      COALESCE((SELECT SUM(op.selling_price_at_moment * op.quantity_used) FROM order_parts op WHERE op.order_id = $1), 0) +
+      COALESCE((SELECT SUM(osrv.price_at_moment * osrv.quantity) FROM order_services osrv WHERE osrv.order_id = $1), 0) AS total`,
+    [orderId]
+  );
+  const cost = Math.round(Number(result.rows[0].total));
+  await client.query('UPDATE orders SET cost = $1 WHERE id = $2', [cost, orderId]);
+}
+
 // Допустимые переходы статусов
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   new: ['diagnosis', 'cancelled'],
@@ -966,6 +978,9 @@ ordersRouter.post('/:id/parts', requireRole('admin', 'master'), async (req, res,
       [input.part_id, input.quantity, id]
     );
 
+    // Пересчитать стоимость заказа
+    await recalcOrderCost(dbClient, Number(id));
+
     await dbClient.query('COMMIT');
     res.json({ message: 'Запчасть списана', part_name: name, quantity: input.quantity });
   } catch (error) {
@@ -977,30 +992,33 @@ ordersRouter.post('/:id/parts', requireRole('admin', 'master'), async (req, res,
 });
 
 // ============================================================
-// DELETE /orders/:id/parts/:partId — возврат запчасти на склад
+// DELETE /orders/:id/parts/:opId — возврат запчасти на склад (opId = order_parts.id)
 // ============================================================
-ordersRouter.delete('/:id/parts/:partId', requireRole('admin'), async (req, res, next) => {
+ordersRouter.delete('/:id/parts/:opId', requireRole('admin'), async (req, res, next) => {
   const dbClient = await pool.connect();
   try {
     const orderId = idParamSchema.parse(req.params.id);
-    const partId = idParamSchema.parse(req.params.partId);
+    const opId = idParamSchema.parse(req.params.opId);
 
     await dbClient.query('BEGIN');
 
     const row = await dbClient.query(
-      'SELECT op.id, op.quantity_used, p.name FROM order_parts op JOIN parts p ON p.id = op.part_id WHERE op.order_id = $1 AND op.part_id = $2',
-      [orderId, partId]
+      'SELECT op.id, op.part_id, op.quantity_used, p.name FROM order_parts op JOIN parts p ON p.id = op.part_id WHERE op.id = $1 AND op.order_id = $2',
+      [opId, orderId]
     );
     if (row.rows.length === 0) throw new NotFoundError('Запчасть в заказе');
 
-    const { quantity_used, name } = row.rows[0];
+    const { part_id, quantity_used, name } = row.rows[0];
 
     // Возвращаем на склад
-    await dbClient.query('UPDATE parts SET quantity = quantity + $1 WHERE id = $2', [quantity_used, partId]);
+    await dbClient.query('UPDATE parts SET quantity = quantity + $1 WHERE id = $2', [quantity_used, part_id]);
     // Удаляем из order_parts
-    await dbClient.query('DELETE FROM order_parts WHERE order_id = $1 AND part_id = $2', [orderId, partId]);
+    await dbClient.query('DELETE FROM order_parts WHERE id = $1', [opId]);
     // Запись в part_movements
-    await dbClient.query(`INSERT INTO part_movements (part_id, type, quantity, order_id) VALUES ($1, 'incoming', $2, $3)`, [partId, quantity_used, orderId]);
+    await dbClient.query(`INSERT INTO part_movements (part_id, type, quantity, order_id) VALUES ($1, 'incoming', $2, $3)`, [part_id, quantity_used, orderId]);
+
+    // Пересчитать стоимость заказа
+    await recalcOrderCost(dbClient, orderId);
 
     await dbClient.query('COMMIT');
     res.json({ message: `Запчасть "${name}" возвращена на склад`, quantity: quantity_used });
@@ -1044,6 +1062,9 @@ ordersRouter.post('/:id/services', requireRole('admin', 'master', 'reception'), 
       [orderId, service_id, quantity, price, master_commission_pct]
     );
 
+    // Пересчитать стоимость заказа
+    await recalcOrderCost(pool, orderId);
+
     res.status(201).json(result.rows[0]);
   } catch (error) { next(error); }
 });
@@ -1063,6 +1084,9 @@ ordersRouter.delete('/:id/services/:sid', requireRole('admin', 'master', 'recept
     if (row.rows.length === 0) throw new NotFoundError('Услуга в заказе');
 
     await pool.query('DELETE FROM order_services WHERE order_id = $1 AND service_id = $2', [orderId, serviceId]);
+
+    // Пересчитать стоимость заказа
+    await recalcOrderCost(pool, orderId);
 
     res.json({ message: `Услуга "${row.rows[0].name}" убрана из заказа` });
   } catch (error) { next(error); }

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Plus, ArrowRightLeft } from 'lucide-react';
+import { Plus, ArrowRightLeft, TrendingUp, TrendingDown } from 'lucide-react';
 import { getAccounts, getAccountTransactions, createAccount, type CompanyAccount, type AccountTransaction } from '../api';
 import { CashTransferModal } from './CashTransferModal';
+import { CashOperationModal } from './CashOperationModal';
 
 interface Props {
   isAdmin: boolean;
@@ -14,6 +15,7 @@ export function CashAccountsTab({ isAdmin }: Props) {
   const [transactions, setTransactions] = useState<AccountTransaction[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [showTransfer, setShowTransfer] = useState(false);
+  const [showOperation, setShowOperation] = useState<'income' | 'expense' | null>(null);
   const [newName, setNewName] = useState('');
   const [newType, setNewType] = useState('cash');
 
@@ -37,6 +39,11 @@ export function CashAccountsTab({ isAdmin }: Props) {
     await load();
   }
 
+  const refreshAll = async () => {
+    await load();
+    if (selectedId) await loadTransactions(selectedId);
+  };
+
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: 16, minHeight: 300 }}>
       {/* Список касс */}
@@ -44,6 +51,8 @@ export function CashAccountsTab({ isAdmin }: Props) {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
           <strong style={{ fontSize: 14 }}>Кассы</strong>
           <div style={{ display: 'flex', gap: 4 }}>
+            <button onClick={() => setShowOperation('income')} className="btn-icon" title="Приход" style={{ color: '#22c55e' }}><TrendingUp size={16} /></button>
+            <button onClick={() => setShowOperation('expense')} className="btn-icon" title="Расход" style={{ color: '#ef4444' }}><TrendingDown size={16} /></button>
             <button onClick={() => setShowTransfer(true)} className="btn-icon" title="Перемещение"><ArrowRightLeft size={16} /></button>
             {isAdmin && <button onClick={() => setShowCreate(true)} className="btn-icon" title="Добавить кассу"><Plus size={16} /></button>}
           </div>
@@ -87,9 +96,16 @@ export function CashAccountsTab({ isAdmin }: Props) {
       <div>
         {selectedId ? (
           <>
-            <strong style={{ fontSize: 14 }}>
-              {accounts.find(a => a.id === selectedId)?.name || 'Касса'} — история
-            </strong>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <strong style={{ fontSize: 14 }}>
+                {accounts.find(a => a.id === selectedId)?.name || 'Касса'} — история
+              </strong>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button onClick={() => setShowOperation('income')} className="btn-primary" style={{ padding: '4px 10px', fontSize: 12, background: '#22c55e' }}>Приход</button>
+                <button onClick={() => setShowOperation('expense')} className="btn-primary" style={{ padding: '4px 10px', fontSize: 12, background: '#ef4444' }}>Расход</button>
+                <button onClick={() => setShowTransfer(true)} className="btn-primary" style={{ padding: '4px 10px', fontSize: 12 }}>Перемещение</button>
+              </div>
+            </div>
             {transactions.length === 0 ? (
               <div style={{ color: '#9aa0a6', fontSize: 13, marginTop: 12 }}>Нет операций</div>
             ) : (
@@ -122,7 +138,15 @@ export function CashAccountsTab({ isAdmin }: Props) {
         )}
       </div>
 
-      {showTransfer && <CashTransferModal accounts={accounts} onClose={() => setShowTransfer(false)} onDone={async () => { setShowTransfer(false); await load(); if (selectedId) await loadTransactions(selectedId); }} />}
+      {showTransfer && <CashTransferModal accounts={accounts} onClose={() => setShowTransfer(false)} onDone={async () => { setShowTransfer(false); await refreshAll(); }} />}
+      {showOperation && (
+        <CashOperationModal
+          accounts={accounts}
+          type={showOperation}
+          onClose={() => setShowOperation(null)}
+          onDone={async () => { setShowOperation(null); await refreshAll(); }}
+        />
+      )}
     </div>
   );
 }

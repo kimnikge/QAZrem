@@ -639,3 +639,17 @@ export function getTransfers() {
 export function createTransfer(data: { from_account_id: number; to_account_id: number; amount: number; comment?: string }) {
   return request<CashTransfer>('/transfers', { method: 'POST', body: JSON.stringify(data) });
 }
+
+export type CashOperation = {
+  id: number;
+  account_id: number;
+  type: 'income' | 'expense';
+  amount: string;
+  description: string | null;
+  created_by: number;
+  created_at: string;
+};
+
+export function createCashOperation(accountId: number, data: { type: 'income' | 'expense'; amount: number; description?: string }) {
+  return request<CashOperation>(`/accounts/${accountId}/operations`, { method: 'POST', body: JSON.stringify(data) });
+}

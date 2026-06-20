@@ -18,26 +18,29 @@ export function OrderPaymentsCard({ order, settings, userRole, onRefresh, onErro
   const [prepayment, setPrepayment] = useState(false);
   const [saving, setSaving] = useState(false);
   const [accounts, setAccounts] = useState<CompanyAccount[]>([]);
-  const [splits, setSplits] = useState<Record<number, number>>({});
+  const [splitRows, setSplitRows] = useState<Array<{ account_id: number; amount: number }>>([]);
+  const splitsTotal = splitRows.reduce((s, r) => s + r.amount, 0);
 
   useEffect(() => { getAccounts().then(setAccounts).catch(() => {}); }, []);
-
-  const splitsTotal = Object.values(splits).reduce((s, v) => s + v, 0);
+  useEffect(() => {
+    if (accounts.length > 0 && splitRows.length === 0) {
+      setSplitRows(accounts.map(a => ({ account_id: a.id, amount: 0 })));
+    }
+  }, [accounts]);
 
   async function handleAdd() {
     if (!amount || !method) return;
     setSaving(true);
     try {
       const paymentAmount = Math.round(Number(amount));
-      const validSplits = Object.entries(splits)
-        .filter(([, v]) => v > 0)
-        .map(([account_id, amt]) => ({ account_id: Number(account_id), amount: amt }));
+      const validSplits = splitRows.filter(r => r.amount > 0);
       await createPayment({
         order_id: order.id, amount: paymentAmount,
         payment_method_id: method, is_prepayment: prepayment,
         splits: validSplits.length > 0 && splitsTotal === paymentAmount ? validSplits : undefined
       });
-      setShowForm(false); setAmount(''); setPrepayment(false); setSplits({});
+      setShowForm(false); setAmount(''); setPrepayment(false);
+      setSplitRows(accounts.map(a => ({ account_id: a.id, amount: 0 })));
       onRefresh();
     } catch (err) {
       onError(err instanceof Error ? err.message : 'Ошибка приёма платежа');
@@ -93,18 +96,28 @@ export function OrderPaymentsCard({ order, settings, userRole, onRefresh, onErro
           {/* Сплитование по кассам */}
           {accounts.length > 0 && (
             <div style={{ marginTop: 10, borderTop: '1px solid var(--border)', paddingTop: 10 }}>
-              <span style={{ fontSize: 12, color: '#5f6368', fontWeight: 500 }}>Разбивка по кассам</span>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
-                {accounts.map(a => (
-                  <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <span style={{ fontSize: 11, color: '#5f6368' }}>{a.name}</span>
-                    <input type="number" value={splits[a.id] || ''}
-                      onChange={e => setSplits(prev => ({ ...prev, [a.id]: Math.round(Number(e.target.value) || 0) }))}
-                      placeholder="0" style={{ width: 70, padding: '4px 6px', border: '1px solid var(--border)', borderRadius: 4, fontSize: 12, textAlign: 'right' }} />
-                  </div>
-                ))}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                <span style={{ fontSize: 12, color: '#5f6368', fontWeight: 500 }}>Разбивка по кассам</span>
+                <button type="button" onClick={() => setSplitRows(prev => [...prev, { account_id: accounts[0].id, amount: 0 }])}
+                  style={{ fontSize: 11, background: 'none', border: '1px dashed var(--primary)', borderRadius: 4, color: 'var(--primary)', cursor: 'pointer', padding: '2px 8px' }}>
+                  + Касса
+                </button>
               </div>
-              {Object.keys(splits).length > 0 && splitsTotal > 0 && (
+              {splitRows.map((r, i) => (
+                <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 4 }}>
+                  <select value={r.account_id} onChange={e => {
+                    setSplitRows(prev => prev.map((s, j) => j === i ? { ...s, account_id: Number(e.target.value) } : s));
+                  }} style={{ flex: 1, padding: '4px 6px', border: '1px solid var(--border)', borderRadius: 4, fontSize: 12, background: 'var(--card-bg)' }}>
+                    {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  </select>
+                  <input type="number" value={r.amount || ''}
+                    onChange={e => setSplitRows(prev => prev.map((s, j) => j === i ? { ...s, amount: Math.round(Number(e.target.value) || 0) } : s))}
+                    placeholder="0" style={{ width: 80, padding: '4px 6px', border: '1px solid var(--border)', borderRadius: 4, fontSize: 12, textAlign: 'right' }} />
+                  <button type="button" onClick={() => setSplitRows(prev => prev.filter((_, j) => j !== i))}
+                    style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 16, padding: 0, lineHeight: 1 }} disabled={splitRows.length <= 1}>×</button>
+                </div>
+              ))}
+              {splitsTotal > 0 && (
                 <div style={{ fontSize: 11, color: splitsTotal === Math.round(Number(amount) || 0) ? '#22c55e' : '#ef4444', marginTop: 4 }}>
                   Распределено: {splitsTotal} / {Math.round(Number(amount) || 0)} ₸
                 </div>

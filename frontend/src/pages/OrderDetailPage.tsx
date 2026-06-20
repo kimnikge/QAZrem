@@ -119,21 +119,33 @@ export function OrderDetailPage() {
           </div>
         )}
 
-        {!editing && (
-          <>
-            <div className="detail-card"><h3>Проблема</h3><p>{order.issue_description}</p></div>
-            <OrderPaymentsCard order={order} settings={settings} userRole={user?.role} onRefresh={load} onError={setError} />
-            <div className="detail-card detail-card-full">
-              <h3>История</h3>
-              {order.history.map(h => (
-                <div key={h.id} className="history-item">
-                  <div className="history-status">{h.from_status_name && <span>{h.from_status_name} → </span>}<strong>{h.to_status_name}</strong></div>
-                  {h.comment && <div className="history-comment">{h.comment}</div>}
-                  <div className="history-meta">{h.user_name} · {new Date(h.created_at).toLocaleString()}</div>
-                </div>
-              ))}
+        {/* Блок оплаты — всегда виден */}
+        {order.status_slug === 'ready' ? (
+          <div className="detail-card" style={{ border: '2px solid #22c55e', background: '#f0fdf4' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+              <span style={{ fontSize: 20 }}>💰</span>
+              <div>
+                <h3 style={{ margin: 0, color: '#166534' }}>Клиент забирает устройство — примите оплату</h3>
+                <p style={{ margin: '2px 0 0', fontSize: 13, color: '#166534' }}>Разбейте сумму по кассам и проведите платёж</p>
+              </div>
             </div>
-          </>
+            <OrderPaymentsCard order={order} settings={settings} userRole={user?.role} onRefresh={load} onError={setError} />
+          </div>
+        ) : (
+          <OrderPaymentsCard order={order} settings={settings} userRole={user?.role} onRefresh={load} onError={setError} />
+        )}
+
+        {!editing && (
+          <div className="detail-card detail-card-full">
+            <h3>История</h3>
+            {order.history.map(h => (
+              <div key={h.id} className="history-item">
+                <div className="history-status">{h.from_status_name && <span>{h.from_status_name} → </span>}<strong>{h.to_status_name}</strong></div>
+                {h.comment && <div className="history-comment">{h.comment}</div>}
+                <div className="history-meta">{h.user_name} · {new Date(h.created_at).toLocaleString()}</div>
+              </div>
+            ))}
+          </div>
         )}
 
         {/* Запчасти и услуги — показывать всегда */}

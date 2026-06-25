@@ -3,10 +3,20 @@ import { request, buildQuery } from './client';
 export type Part = {
   id: number; name: string; sku: string; compatible_models: string[];
   purchase_price: string; selling_price: string; quantity: number; min_quantity: number;
+  category_id: number | null; category_name: string | null;
+  model_name: string | null; unit: string; photo_url: string | null; is_active: boolean;
+  attributes: Record<string, unknown>;
+  tags: { id: number; name: string; color: string }[];
 };
 
-export function getParts(lowStock?: boolean) {
-  return request<Part[]>(`/parts${lowStock ? '?low_stock=true' : ''}`);
+export function getParts(params?: { low_stock?: boolean; category_id?: number; tag_id?: number; search?: string; inactive?: boolean }) {
+  return request<Part[]>(`/parts${buildQuery({
+    low_stock: params?.low_stock ? 'true' : undefined,
+    category_id: params?.category_id,
+    tag_id: params?.tag_id,
+    search: params?.search,
+    inactive: params?.inactive ? 'true' : undefined,
+  })}`);
 }
 
 export function writeoffPart(data: { part_id: number; quantity: number; document?: string }) {
@@ -21,9 +31,25 @@ export function getPartMovements(params?: { part_id?: number; type?: string; lim
   return request<{ movements: Array<{ id: number; part_name: string; sku: string; type: string; quantity: number; document: string | null; created_at: string }>; total: number }>(`/parts/movements${buildQuery({ part_id: params?.part_id, type: params?.type, limit: params?.limit })}`);
 }
 
+// ═══════════════════════════════════════════
+// Теги
+// ═══════════════════════════════════════════
+
+export type Tag = { id: number; name: string; color: string; parts_count?: number };
+
+export function getTags() { return request<Tag[]>('/parts/tags'); }
+export function createTag(name: string, color?: string) { return request<Tag>('/parts/tags', { method: 'POST', body: JSON.stringify({ name, color }) }); }
+export function deleteTag(id: number) { return request<{ message: string }>(`/parts/tags/${id}`, { method: 'DELETE' }); }
+
+// ═══════════════════════════════════════════
+// CRUD запчастей
+// ═══════════════════════════════════════════
+
 export type CreatePartInput = {
-  name: string; sku: string; purchase_price: number; selling_price: number;
+  name: string; sku?: string; purchase_price: number; selling_price: number;
   quantity?: number; min_quantity?: number; compatible_models?: string[];
+  category_id?: number | null; model_name?: string; attributes?: Record<string, unknown>;
+  unit?: string; photo_url?: string; tag_ids?: number[];
 };
 
 export function createPart(data: CreatePartInput) {
@@ -32,6 +58,10 @@ export function createPart(data: CreatePartInput) {
 
 export function updatePart(id: number, data: Partial<CreatePartInput>) {
   return request<Part>(`/parts/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+}
+
+export function deletePart(id: number) {
+  return request<{ message: string }>(`/parts/${id}`, { method: 'DELETE' });
 }
 
 export function receivePart(part_id: number, quantity: number, document?: string, supplier_id?: number, supplier_sku?: string, batch_number?: string) {

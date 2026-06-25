@@ -767,12 +767,12 @@ ordersRouter.post('/', requireRole('admin', 'reception'), async (req, res, next)
       [orderId, req.user!.userId, newStatusId]
     );
 
-    // Списание запчастей (если переданы)
+    // Списание запчастей (если переданы) — FIFO
     const parts: Array<{ part_id: number; quantity: number }> = req.body.parts || [];
     for (const part of parts) {
       // Проверяем остаток
       const stockResult = await client.query(
-        'SELECT quantity, purchase_price, selling_price FROM parts WHERE id = $1 FOR UPDATE',
+        'SELECT id, quantity, selling_price FROM parts WHERE id = $1 FOR UPDATE',
         [part.part_id]
       );
       if (stockResult.rows.length === 0) {
@@ -784,27 +784,53 @@ ordersRouter.post('/', requireRole('admin', 'reception'), async (req, res, next)
         );
       }
 
-      const purchasePrice = Number(stockResult.rows[0].purchase_price);
       const sellingPrice = Number(stockResult.rows[0].selling_price);
 
-      // Уменьшаем остаток
+      // FIFO: списываем из партий
+      const batches = await client.query(
+        `SELECT id, batch_number, current_quantity, purchase_price
+         FROM part_batches WHERE part_id = $1 AND current_quantity > 0
+         ORDER BY received_at ASC FOR UPDATE`,
+        [part.part_id]
+      );
+
+      let remaining = part.quantity;
+      for (const batch of batches.rows) {
+        if (remaining <= 0) break;
+        const take = Math.min(remaining, batch.current_quantity);
+        remaining -= take;
+
+        await client.query(
+          'UPDATE part_batches SET current_quantity = current_quantity - $1 WHERE id = $2',
+          [take, batch.id]
+        );
+
+        // Запись в order_parts с batch_id
+        await client.query(
+          `INSERT INTO order_parts (order_id, part_id, quantity_used, purchase_price_at_moment, selling_price_at_moment, batch_id)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [orderId, part.part_id, take, batch.purchase_price, sellingPrice, batch.id]
+        );
+
+        // Запись в part_movements
+        await client.query(
+          `INSERT INTO part_movements (part_id, type, quantity, order_id, batch_id, batch_number)
+           VALUES ($1, 'outgoing', $2, $3, $4, $5)`,
+          [part.part_id, take, orderId, batch.id, batch.batch_number]
+        );
+      }
+
+      // Проверяем, что весь объём покрыт партиями
+      if (remaining > 0) {
+        throw new BadRequestError(
+          `Несоответствие остатков по запчасти #${part.part_id}: не хватает ${remaining}шт в партиях`
+        );
+      }
+
+      // Уменьшаем общий остаток
       await client.query(
         'UPDATE parts SET quantity = quantity - $1 WHERE id = $2',
         [part.quantity, part.part_id]
-      );
-
-      // Запись в order_parts
-      await client.query(
-        `INSERT INTO order_parts (order_id, part_id, quantity_used, purchase_price_at_moment, selling_price_at_moment)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [orderId, part.part_id, part.quantity, purchasePrice, sellingPrice]
-      );
-
-      // Запись в part_movements
-      await client.query(
-        `INSERT INTO part_movements (part_id, type, quantity, order_id)
-         VALUES ($1, 'outgoing', $2, $3)`,
-        [part.part_id, part.quantity, orderId]
       );
     }
 
@@ -947,7 +973,7 @@ ordersRouter.patch('/:id/status', requireRole('admin', 'master'), async (req, re
 });
 
 // ============================================================
-// POST /orders/:id/parts — списание запчасти на заказ
+// POST /orders/:id/parts — списание запчасти на заказ (FIFO)
 // ============================================================
 ordersRouter.post('/:id/parts', requireRole('admin', 'master'), async (req, res, next) => {
   const dbClient = await pool.connect();
@@ -957,7 +983,7 @@ ordersRouter.post('/:id/parts', requireRole('admin', 'master'), async (req, res,
 
     await dbClient.query('BEGIN');
 
-    // Проверяем, что заказ существует и не в финальном статусе
+    // Проверяем заказ
     const order = await dbClient.query(
       `SELECT o.id, os.is_final FROM orders o
        JOIN order_statuses os ON os.id = o.status_id
@@ -969,14 +995,14 @@ ordersRouter.post('/:id/parts', requireRole('admin', 'master'), async (req, res,
       throw new BadRequestError('Нельзя списать запчасть на завершённый заказ');
     }
 
-    // Проверяем остаток запчасти
+    // Проверяем остаток
     const part = await dbClient.query(
-      'SELECT id, name, purchase_price, selling_price, quantity FROM parts WHERE id = $1',
+      'SELECT id, name, selling_price, quantity FROM parts WHERE id = $1 FOR UPDATE',
       [input.part_id]
     );
     if (part.rows.length === 0) throw new NotFoundError('Запчасть');
 
-    const { name, purchase_price, selling_price, quantity } = part.rows[0];
+    const { name, selling_price, quantity } = part.rows[0];
 
     if (quantity < input.quantity) {
       throw new BadRequestError(
@@ -984,24 +1010,51 @@ ordersRouter.post('/:id/parts', requireRole('admin', 'master'), async (req, res,
       );
     }
 
-    // Списываем со склада
+    // FIFO: списываем из партий
+    const batches = await dbClient.query(
+      `SELECT id, batch_number, current_quantity, purchase_price
+       FROM part_batches WHERE part_id = $1 AND current_quantity > 0
+       ORDER BY received_at ASC FOR UPDATE`,
+      [input.part_id]
+    );
+
+    let remaining = input.quantity;
+    for (const batch of batches.rows) {
+      if (remaining <= 0) break;
+      const take = Math.min(remaining, batch.current_quantity);
+      remaining -= take;
+
+      await dbClient.query(
+        'UPDATE part_batches SET current_quantity = current_quantity - $1 WHERE id = $2',
+        [take, batch.id]
+      );
+
+      // Запись в order_parts с batch_id
+      await dbClient.query(
+        `INSERT INTO order_parts (order_id, part_id, quantity_used, purchase_price_at_moment, selling_price_at_moment, batch_id)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [id, input.part_id, take, batch.purchase_price, selling_price, batch.id]
+      );
+
+      // Запись в part_movements
+      await dbClient.query(
+        `INSERT INTO part_movements (part_id, type, quantity, order_id, batch_id, batch_number)
+         VALUES ($1, 'outgoing', $2, $3, $4, $5)`,
+        [input.part_id, take, id, batch.id, batch.batch_number]
+      );
+    }
+
+    // Проверяем, что весь объём покрыт партиями
+    if (remaining > 0) {
+      throw new BadRequestError(
+        `Несоответствие остатков: не хватает ${remaining}шт в партиях`
+      );
+    }
+
+    // Уменьшаем общий остаток
     await dbClient.query(
       'UPDATE parts SET quantity = quantity - $1 WHERE id = $2',
       [input.quantity, input.part_id]
-    );
-
-    // Добавляем запись в order_parts
-    await dbClient.query(
-      `INSERT INTO order_parts (order_id, part_id, quantity_used, purchase_price_at_moment, selling_price_at_moment)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [id, input.part_id, input.quantity, purchase_price, selling_price]
-    );
-
-    // Добавляем запись в part_movements
-    await dbClient.query(
-      `INSERT INTO part_movements (part_id, type, quantity, order_id)
-       VALUES ($1, 'outgoing', $2, $3)`,
-      [input.part_id, input.quantity, id]
     );
 
     // Пересчитать стоимость заказа
@@ -1018,7 +1071,7 @@ ordersRouter.post('/:id/parts', requireRole('admin', 'master'), async (req, res,
 });
 
 // ============================================================
-// DELETE /orders/:id/parts/:opId — возврат запчасти на склад (opId = order_parts.id)
+// DELETE /orders/:id/parts/:opId — возврат запчасти на склад
 // ============================================================
 ordersRouter.delete('/:id/parts/:opId', requireRole('admin'), async (req, res, next) => {
   const dbClient = await pool.connect();
@@ -1029,19 +1082,35 @@ ordersRouter.delete('/:id/parts/:opId', requireRole('admin'), async (req, res, n
     await dbClient.query('BEGIN');
 
     const row = await dbClient.query(
-      'SELECT op.id, op.part_id, op.quantity_used, p.name FROM order_parts op JOIN parts p ON p.id = op.part_id WHERE op.id = $1 AND op.order_id = $2',
+      `SELECT op.id, op.part_id, op.quantity_used, op.batch_id, p.name
+       FROM order_parts op JOIN parts p ON p.id = op.part_id
+       WHERE op.id = $1 AND op.order_id = $2`,
       [opId, orderId]
     );
     if (row.rows.length === 0) throw new NotFoundError('Запчасть в заказе');
 
-    const { part_id, quantity_used, name } = row.rows[0];
+    const { part_id, quantity_used, batch_id, name } = row.rows[0];
+
+    // Возвращаем остаток в ту же партию
+    if (batch_id) {
+      await dbClient.query(
+        'UPDATE part_batches SET current_quantity = current_quantity + $1 WHERE id = $2',
+        [quantity_used, batch_id]
+      );
+    }
 
     // Возвращаем на склад
     await dbClient.query('UPDATE parts SET quantity = quantity + $1 WHERE id = $2', [quantity_used, part_id]);
+
     // Удаляем из order_parts
     await dbClient.query('DELETE FROM order_parts WHERE id = $1', [opId]);
-    // Запись в part_movements
-    await dbClient.query(`INSERT INTO part_movements (part_id, type, quantity, order_id) VALUES ($1, 'incoming', $2, $3)`, [part_id, quantity_used, orderId]);
+
+    // Запись в part_movements с типом return_order
+    await dbClient.query(
+      `INSERT INTO part_movements (part_id, type, quantity, order_id, batch_id)
+       VALUES ($1, 'return_order', $2, $3, $4)`,
+      [part_id, quantity_used, orderId, batch_id]
+    );
 
     // Пересчитать стоимость заказа
     await recalcOrderCost(dbClient, orderId);
@@ -1050,6 +1119,112 @@ ordersRouter.delete('/:id/parts/:opId', requireRole('admin'), async (req, res, n
     res.json({ message: `Запчасть "${name}" возвращена на склад`, quantity: quantity_used });
   } catch (error) {
     await dbClient.query('ROLLBACK');
+    next(error);
+  } finally {
+    dbClient.release();
+  }
+});
+
+// ============================================================
+// POST /orders/:id/reserve — зарезервировать запчасть под заказ
+// ============================================================
+ordersRouter.post('/:id/reserve', requireRole('admin', 'master'), async (req, res, next) => {
+  const dbClient = await pool.connect();
+  try {
+    const orderId = parseInt(req.params.id);
+    const { part_id, quantity, batch_id } = z.object({
+      part_id: z.number().int().positive(),
+      quantity: z.number().int().positive(),
+      batch_id: z.number().int().positive().optional(),
+    }).parse(req.body);
+
+    // Проверяем заказ
+    const order = await dbClient.query(
+      `SELECT o.id, os.is_final FROM orders o
+       JOIN order_statuses os ON os.id = o.status_id WHERE o.id = $1`,
+      [orderId]
+    );
+    if (order.rows.length === 0) throw new NotFoundError('Заказ');
+    if (order.rows[0].is_final) {
+      throw new BadRequestError('Нельзя резервировать в завершённом заказе');
+    }
+
+    // Проверяем остаток
+    const part = await dbClient.query(
+      'SELECT id, name, quantity FROM parts WHERE id = $1 FOR UPDATE', [part_id]
+    );
+    if (part.rows.length === 0) throw new NotFoundError('Запчасть');
+
+    // Проверяем доступный остаток (с учётом активных резервов)
+    const reserved = await dbClient.query(
+      `SELECT COALESCE(SUM(quantity), 0)::int AS reserved
+       FROM reservations WHERE part_id = $1 AND status = 'active'`,
+      [part_id]
+    );
+    const available = part.rows[0].quantity - reserved.rows[0].reserved;
+    if (available < quantity) {
+      throw new BadRequestError(
+        `Недостаточно для резерва. Доступно: ${available} (всего ${part.rows[0].quantity}, зарезервировано ${reserved.rows[0].reserved})`
+      );
+    }
+
+    const result = await dbClient.query(
+      `INSERT INTO reservations (part_id, batch_id, order_id, quantity, reserved_by, status)
+       VALUES ($1, $2, $3, $4, $5, 'active') RETURNING *`,
+      [part_id, batch_id || null, orderId, quantity, req.user!.userId]
+    );
+
+    await dbClient.query('COMMIT');
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    await dbClient.query('ROLLBACK');
+    next(error);
+  } finally {
+    dbClient.release();
+  }
+});
+
+// ============================================================
+// GET /orders/:id/reservations — список резервов по заказу
+// ============================================================
+ordersRouter.get('/:id/reservations', async (req, res, next) => {
+  try {
+    const orderId = parseInt(req.params.id);
+    const result = await pool.query(
+      `SELECT r.*, p.name AS part_name, p.sku,
+        pb.batch_number, u.name AS reserved_by_name
+       FROM reservations r
+       JOIN parts p ON p.id = r.part_id
+       LEFT JOIN part_batches pb ON pb.id = r.batch_id
+       JOIN users u ON u.id = r.reserved_by
+       WHERE r.order_id = $1
+       ORDER BY r.reserved_at DESC`,
+      [orderId]
+    );
+    res.json(result.rows);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ============================================================
+// DELETE /orders/:id/reserve/:reservationId — отменить резерв
+// ============================================================
+ordersRouter.delete('/:id/reserve/:reservationId', requireRole('admin'), async (req, res, next) => {
+  const dbClient = await pool.connect();
+  try {
+    const orderId = parseInt(req.params.id);
+    const reservationId = parseInt(req.params.reservationId);
+
+    const result = await dbClient.query(
+      `UPDATE reservations SET status = 'cancelled'
+       WHERE id = $1 AND order_id = $2 AND status = 'active' RETURNING *`,
+      [reservationId, orderId]
+    );
+    if (result.rows.length === 0) throw new NotFoundError('Активный резерв');
+
+    res.json({ message: 'Резерв отменён', reservation: result.rows[0] });
+  } catch (error) {
     next(error);
   } finally {
     dbClient.release();

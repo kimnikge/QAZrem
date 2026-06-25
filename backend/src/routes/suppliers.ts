@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { pool } from '../db/pool.js';
-import { NotFoundError } from '../lib/errors.js';
+import { NotFoundError, BadRequestError } from '../lib/errors.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 
 export const suppliersRouter = Router();
@@ -106,5 +106,67 @@ suppliersRouter.delete('/:id', requireRole('admin'), async (req, res, next) => {
     res.json({ message: 'Поставщик удалён' });
   } catch (error) {
     next(error);
+  }
+});
+
+// ============================================================
+// POST /suppliers/:id/return — возврат партии поставщику
+// ============================================================
+suppliersRouter.post('/:id/return', requireRole('admin'), async (req, res, next) => {
+  const dbClient = await pool.connect();
+  try {
+    const supplierId = parseInt(req.params.id);
+    const { batch_id, part_id, quantity, reason } = z.object({
+      batch_id: z.number().int().positive(),
+      part_id: z.number().int().positive(),
+      quantity: z.number().int().positive(),
+      reason: z.string().optional(),
+    }).parse(req.body);
+
+    await dbClient.query('BEGIN');
+
+    // Проверяем партию
+    const batch = await dbClient.query(
+      `SELECT id, batch_number, current_quantity, supplier_id
+       FROM part_batches WHERE id = $1 AND supplier_id = $2 FOR UPDATE`,
+      [batch_id, supplierId]
+    );
+    if (batch.rows.length === 0) throw new NotFoundError('Партия у этого поставщика');
+
+    if (batch.rows[0].current_quantity < quantity) {
+      throw new BadRequestError(
+        `Недостаточно в партии. Доступно: ${batch.rows[0].current_quantity}`
+      );
+    }
+
+    // Уменьшаем остаток партии
+    await dbClient.query(
+      'UPDATE part_batches SET current_quantity = current_quantity - $1 WHERE id = $2',
+      [quantity, batch_id]
+    );
+
+    // Уменьшаем общий остаток запчасти
+    await dbClient.query(
+      'UPDATE parts SET quantity = quantity - $1 WHERE id = $2',
+      [quantity, part_id]
+    );
+
+    // Запись в part_movements
+    await dbClient.query(
+      `INSERT INTO part_movements (part_id, type, quantity, batch_id, batch_number, supplier_id, document)
+       VALUES ($1, 'return_supplier', $2, $3, $4, $5, $6)`,
+      [part_id, quantity, batch_id, batch.rows[0].batch_number, supplierId, reason || null]
+    );
+
+    await dbClient.query('COMMIT');
+    res.json({
+      message: `Возврат поставщику: партия ${batch.rows[0].batch_number}, ${quantity}шт`,
+      reason: reason || null
+    });
+  } catch (error) {
+    await dbClient.query('ROLLBACK');
+    next(error);
+  } finally {
+    dbClient.release();
   }
 });

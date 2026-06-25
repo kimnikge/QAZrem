@@ -21,17 +21,19 @@ export {
 
 export {
   type Order, type OrderListResponse, type OrderDetail,
-  type CreateOrderInput, type AvailableStatus,
+  type CreateOrderInput, type AvailableStatus, type Reservation,
   getOrders, getOrder, getOrderStatuses,
   createOrder, updateOrder, updateOrderStatus,
   assignPartToOrder, deleteOrderPart,
   assignServiceToOrder, deleteOrderService,
+  reservePart, getReservations, cancelReservation,
 } from './orders';
 
 export {
-  type Part, type CreatePartInput,
+  type Part, type CreatePartInput, type Tag,
   getParts, writeoffPart, getPartsSummary, getPartMovements,
-  createPart, updatePart, receivePart,
+  createPart, updatePart, receivePart, deletePart,
+  getTags, createTag, deleteTag,
 } from './parts';
 
 export {
@@ -55,7 +57,7 @@ export {
 
 export {
   type Supplier, type CreateSupplierInput,
-  getSuppliers, createSupplier, updateSupplier, deleteSupplier,
+  getSuppliers, createSupplier, updateSupplier, deleteSupplier, returnToSupplier,
 } from './suppliers';
 
 export {

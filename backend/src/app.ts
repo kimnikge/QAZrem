@@ -28,6 +28,9 @@ import { usersRouter } from './routes/users.js';
 import { accountsRouter } from './routes/accounts.js';
 import { transfersRouter } from './routes/transfers.js';
 import { reportsRouter } from './routes/reports.js';
+import { warehouseCategoriesRouter } from './routes/warehouse/categories.js';
+import { warehouseInventoryRouter } from './routes/warehouse/inventory.js';
+import { warehouseReportsRouter } from './routes/warehouse/reports.js';
 import { requireAuth } from './middleware/auth.js';
 
 export const app = express();
@@ -98,6 +101,9 @@ app.use('/suppliers', requireAuth, suppliersRouter);
 app.use('/print-templates', printTemplatesRouter);
 app.use('/users', usersRouter);
 app.use('/accounts', requireAuth, accountsRouter);
+app.use('/warehouse/categories', requireAuth, warehouseCategoriesRouter);
+app.use('/warehouse/inventory', requireAuth, warehouseInventoryRouter);
+app.use('/warehouse/reports', requireAuth, warehouseReportsRouter);
 app.use('/transfers', requireAuth, transfersRouter);
 app.use('/reports', requireAuth, reportsRouter);
 

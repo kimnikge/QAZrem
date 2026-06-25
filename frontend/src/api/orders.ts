@@ -123,3 +123,25 @@ export function assignServiceToOrder(orderId: number, serviceId: number, quantit
 export function deleteOrderService(orderId: number, serviceId: number) {
   return request(`/orders/${orderId}/services/${serviceId}`, { method: 'DELETE' });
 }
+
+// ═══════════════════════════════════════════
+// Резервирование
+// ═══════════════════════════════════════════
+
+export type Reservation = {
+  id: number; part_id: number; batch_id: number | null; order_id: number;
+  quantity: number; reserved_by: number; reserved_at: string; expires_at: string | null;
+  status: string; part_name?: string; sku?: string; batch_number?: string; reserved_by_name?: string;
+};
+
+export function reservePart(orderId: number, data: { part_id: number; quantity: number; batch_id?: number }) {
+  return request<Reservation>(`/orders/${orderId}/reserve`, { method: 'POST', body: JSON.stringify(data) });
+}
+
+export function getReservations(orderId: number) {
+  return request<Reservation[]>(`/orders/${orderId}/reservations`);
+}
+
+export function cancelReservation(orderId: number, reservationId: number) {
+  return request<{ message: string }>(`/orders/${orderId}/reserve/${reservationId}`, { method: 'DELETE' });
+}

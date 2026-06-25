@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Package, Plus, Save, ArrowDownToLine, Truck, UserPlus } from 'lucide-react';
-import { getParts, createPart, updatePart, receivePart, writeoffPart, type Part } from '../api';
-import { getSuppliers, createSupplier, type Supplier } from '../api/suppliers';
+import { Package, Plus, Save, ArrowDownToLine, Truck, UserPlus, Search as SearchIcon, Edit3, Trash2 } from 'lucide-react';
+import { getParts, createPart, updatePart, receivePart, writeoffPart, deletePart, getTags, type Part, type Tag } from '../api';
+import { getSuppliers, createSupplier, updateSupplier, deleteSupplier, type Supplier } from '../api/suppliers';
+import { getCategories, type Category } from '../api/warehouse';
 import { useAuth } from '../context/AuthContext';
+import { CrudModal } from '../components/CrudModal';
+import { TagSelect } from '../components/TagSelect';
 
 export function PartsPage() {
   const { user } = useAuth();
@@ -10,14 +13,32 @@ export function PartsPage() {
   const [parts, setParts] = useState<Part[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Create modal
+  // Filters
+  const [search, setSearch] = useState('');
+  const [filterCategory, setFilterCategory] = useState<number>(0);
+  const [filterTag, setFilterTag] = useState<number>(0);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [allTags, setAllTags] = useState<Tag[]>([]);
+
+  // Create
   const [showCreate, setShowCreate] = useState(false);
-  const [newPart, setNewPart] = useState({ name: '', sku: '', purchase_price: 0, selling_price: 0, quantity: 0, min_quantity: 2 });
+  const [newName, setNewName] = useState('');
+  const [newSku, setNewSku] = useState('');
+  const [newPurchase, setNewPurchase] = useState(0);
+  const [newSelling, setNewSelling] = useState(0);
+  const [newQty, setNewQty] = useState(0);
+  const [newMinQty, setNewMinQty] = useState(2);
+  const [newCategoryId, setNewCategoryId] = useState<number | null>(null);
+  const [newModel, setNewModel] = useState('');
+  const [newUnit, setNewUnit] = useState('шт');
+  const [newPhoto, setNewPhoto] = useState('');
+  const [newTags, setNewTags] = useState<Tag[]>([]);
   const [creating, setCreating] = useState(false);
 
   // Edit / Receive modal
   const [editPart, setEditPart] = useState<Part | null>(null);
-  const [editData, setEditData] = useState({ name: '', sku: '', purchase_price: 0, selling_price: 0, min_quantity: 2 });
+  const [editData, setEditData] = useState({ name: '', sku: '', purchase_price: 0, selling_price: 0, min_quantity: 2, category_id: null as number | null, model_name: '', unit: 'шт', photo_url: '' });
+  const [editTags, setEditTags] = useState<Tag[]>([]);
   const [receiveQty, setReceiveQty] = useState(0);
   const [receiveDoc, setReceiveDoc] = useState('');
   const [writeoffQty, setWriteoffQty] = useState(0);
@@ -30,6 +51,9 @@ export function PartsPage() {
   const [receiveSupplierId, setReceiveSupplierId] = useState<number>(0);
   const [receiveSupplierSku, setReceiveSupplierSku] = useState('');
   const [receiveBatchNumber, setReceiveBatchNumber] = useState('');
+  const [editSupplierId, setEditSupplierId] = useState<number | null>(null);
+  const [editSupplierName, setEditSupplierName] = useState('');
+  const [editSupplierPhone, setEditSupplierPhone] = useState('');
 
   // Quick add supplier
   const [showAddSupplier, setShowAddSupplier] = useState(false);
@@ -39,53 +63,70 @@ export function PartsPage() {
 
   async function load() {
     try {
-      const data = await getParts();
+      const data = await getParts({
+        search: search || undefined,
+        category_id: filterCategory || undefined,
+        tag_id: filterTag || undefined,
+      });
       setParts(data);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
   }
 
-  useEffect(() => { load(); getSuppliers().then(setSuppliers).catch(() => {}); }, []);
+  useEffect(() => {
+    load();
+    getSuppliers().then(setSuppliers).catch(() => {});
+    getCategories().then(setCategories).catch(() => {});
+    getTags().then(setAllTags).catch(() => {});
+  }, []);
+
+  useEffect(() => { load(); }, [search, filterCategory, filterTag]);
 
   async function handleCreate() {
-    if (!newPart.name || !newPart.sku) return;
+    if (!newName) return;
     setCreating(true);
     try {
       await createPart({
-        name: newPart.name,
-        sku: newPart.sku,
-        purchase_price: Math.round(Number(newPart.purchase_price)),
-        selling_price: Math.round(Number(newPart.selling_price)),
-        quantity: Math.round(Number(newPart.quantity)),
-        min_quantity: Math.round(Number(newPart.min_quantity))
+        name: newName,
+        sku: newSku || undefined,
+        purchase_price: Math.round(Number(newPurchase)),
+        selling_price: Math.round(Number(newSelling)),
+        quantity: Math.round(Number(newQty)),
+        min_quantity: Math.round(Number(newMinQty)),
+        category_id: newCategoryId,
+        model_name: newModel || undefined,
+        unit: newUnit,
+        photo_url: newPhoto || undefined,
+        tag_ids: newTags.map(t => t.id),
       });
       setShowCreate(false);
-      setNewPart({ name: '', sku: '', purchase_price: 0, selling_price: 0, quantity: 0, min_quantity: 2 });
+      resetCreateForm();
       await load();
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setCreating(false);
-    }
+    } catch (e) { console.error(e); }
+    finally { setCreating(false); }
+  }
+
+  function resetCreateForm() {
+    setNewName(''); setNewSku(''); setNewPurchase(0); setNewSelling(0);
+    setNewQty(0); setNewMinQty(2); setNewCategoryId(null); setNewModel('');
+    setNewUnit('шт'); setNewPhoto(''); setNewTags([]);
   }
 
   function openEdit(p: Part) {
     setEditPart(p);
     setEditData({
-      name: p.name,
-      sku: p.sku,
+      name: p.name, sku: p.sku,
       purchase_price: Math.round(Number(p.purchase_price)),
       selling_price: Math.round(Number(p.selling_price)),
-      min_quantity: p.min_quantity
+      min_quantity: p.min_quantity,
+      category_id: p.category_id,
+      model_name: p.model_name || '',
+      unit: p.unit || 'шт',
+      photo_url: p.photo_url || '',
     });
-    setReceiveQty(0);
-    setReceiveDoc('');
-    setReceiveSupplierId(0);
-    setReceiveSupplierSku('');
-    setReceiveBatchNumber('');
+    setEditTags(p.tags || []);
+    setReceiveQty(0); setReceiveDoc('');
+    setReceiveSupplierId(0); setReceiveSupplierSku(''); setReceiveBatchNumber('');
   }
 
   async function handleSaveEdit() {
@@ -93,19 +134,26 @@ export function PartsPage() {
     setSaving(true);
     try {
       await updatePart(editPart.id, {
-        name: editData.name,
-        sku: editData.sku,
+        name: editData.name, sku: editData.sku,
         purchase_price: editData.purchase_price,
         selling_price: editData.selling_price,
-        min_quantity: editData.min_quantity
+        min_quantity: editData.min_quantity,
+        category_id: editData.category_id,
+        model_name: editData.model_name || undefined,
+        unit: editData.unit,
+        photo_url: editData.photo_url || undefined,
+        tag_ids: editTags.map(t => t.id),
       });
       setEditPart(null);
       await load();
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setSaving(false);
-    }
+    } catch (e) { console.error(e); }
+    finally { setSaving(false); }
+  }
+
+  async function handleDeletePart(id: number, name: string) {
+    if (!confirm(`Удалить запчасть "${name}"?`)) return;
+    try { await deletePart(id); await load(); }
+    catch (e: any) { alert(e?.message || 'Ошибка'); }
   }
 
   async function handleReceive() {
@@ -178,27 +226,55 @@ export function PartsPage() {
         )}
       </div>
 
+      {/* Фильтры */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+        <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
+          <SearchIcon size={16} style={{ position: 'absolute', left: 10, top: 10, color: '#9ca3af' }} />
+          <input
+            value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Поиск по названию, артикулу, модели..."
+            style={{ width: '100%', padding: '8px 12px 8px 32px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14 }}
+          />
+        </div>
+        <select value={filterCategory || ''} onChange={e => setFilterCategory(Number(e.target.value) || 0)}
+          style={{ padding: '8px 12px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14, background: '#fff' }}>
+          <option value="">Все категории</option>
+          {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+        <select value={filterTag || ''} onChange={e => setFilterTag(Number(e.target.value) || 0)}
+          style={{ padding: '8px 12px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14, background: '#fff' }}>
+          <option value="">Все теги</option>
+          {allTags.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+        </select>
+      </div>
+
       {loading ? <div className="loading">Загрузка...</div> : (
         <table className="table">
           <thead>
             <tr>
               <th>Название</th>
               <th>Артикул</th>
+              <th>Категория</th>
+              <th>Теги</th>
               <th>Цена закуп</th>
               <th>Цена продажи</th>
               <th>Остаток</th>
-              <th>Мин. уровень</th>
+              <th>Мин.</th>
             </tr>
           </thead>
           <tbody>
             {parts.map(p => (
-              <tr
-                key={p.id}
-                onClick={() => isAdmin && openEdit(p)}
-                style={{ cursor: isAdmin ? 'pointer' : undefined }}
-              >
+              <tr key={p.id} onClick={() => isAdmin && openEdit(p)} style={{ cursor: isAdmin ? 'pointer' : undefined }}>
                 <td>{p.name}</td>
                 <td><code>{p.sku}</code></td>
+                <td style={{ fontSize: 13, color: '#5f6368' }}>{p.category_name || '—'}</td>
+                <td>
+                  <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+                    {(p.tags || []).map(tag => (
+                      <span key={tag.id} style={{ background: tag.color || '#6b7280', color: '#fff', borderRadius: 8, padding: '1px 6px', fontSize: 10, fontWeight: 500 }}>{tag.name}</span>
+                    ))}
+                  </div>
+                </td>
                 <td>{Math.round(Number(p.purchase_price))} ₸</td>
                 <td>{Math.round(Number(p.selling_price))} ₸</td>
                 <td><strong>{p.quantity}</strong></td>
@@ -224,6 +300,7 @@ export function PartsPage() {
                 <th>Контакт</th>
                 <th>Телефон</th>
                 <th>Поставок</th>
+                {isAdmin && <th style={{ width: 80 }}></th>}
               </tr>
             </thead>
             <tbody>
@@ -233,62 +310,55 @@ export function PartsPage() {
                   <td>{s.contact_person || '—'}</td>
                   <td>{s.phone || '—'}</td>
                   <td>{s.deliveries_count ?? 0}</td>
+                  {isAdmin && (
+                    <td style={{ display: 'flex', gap: 4 }}>
+                      <button onClick={() => { setEditSupplierId(s.id); setEditSupplierName(s.name); setEditSupplierPhone(s.phone || ''); }}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#5f6368' }} title="Ред."><Edit3 size={12} /></button>
+                      <button onClick={async () => { if (confirm(`Удалить поставщика "${s.name}"?`)) { await deleteSupplier(s.id); getSuppliers().then(setSuppliers); } }}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444' }} title="Удалить"><Trash2 size={12} /></button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
           </table>
+
+          {/* Инлайн-редактирование поставщика */}
+          {editSupplierId && (
+            <div style={{ marginTop: 8, padding: 8, background: 'var(--bg)', borderRadius: 6, display: 'flex', gap: 8, alignItems: 'end' }}>
+              <input value={editSupplierName} onChange={e => setEditSupplierName(e.target.value)} placeholder="Название" style={{ padding: '6px 8px', border: '1px solid var(--border)', borderRadius: 4, fontSize: 12, width: 160 }} />
+              <input value={editSupplierPhone} onChange={e => setEditSupplierPhone(e.target.value)} placeholder="Телефон" style={{ padding: '6px 8px', border: '1px solid var(--border)', borderRadius: 4, fontSize: 12, width: 120 }} />
+              <button onClick={async () => { await updateSupplier(editSupplierId, { name: editSupplierName, phone: editSupplierPhone || undefined }); setEditSupplierId(null); getSuppliers().then(setSuppliers); }}
+                style={{ padding: '6px 12px', fontSize: 12, background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}>Сохранить</button>
+              <button onClick={() => setEditSupplierId(null)} style={{ padding: '6px 12px', fontSize: 12, background: 'none', border: '1px solid var(--border)', borderRadius: 4, cursor: 'pointer' }}>Отмена</button>
+            </div>
+          )}
         </div>
       )}
 
       {/* Modal: создать запчасть */}
       {showCreate && (
-        <div style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
-        }} onClick={() => setShowCreate(false)}>
-          <div style={{
-            background: '#fff', borderRadius: 12, padding: 24,
-            maxWidth: 480, width: '90%', boxShadow: '0 8px 32px rgba(0,0,0,0.2)'
-          }} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <h3 style={{ margin: 0 }}>Новая запчасть</h3>
-              <button onClick={() => setShowCreate(false)} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: '#5f6368' }}>×</button>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div>
-                <label style={{ fontSize: 13, color: '#5f6368', display: 'block', marginBottom: 4 }}>Название *</label>
-                <input value={newPart.name} onChange={e => setNewPart({ ...newPart, name: e.target.value })} placeholder="Например: Экран iPhone 13" style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14 }} />
-              </div>
-              <div>
-                <label style={{ fontSize: 13, color: '#5f6368', display: 'block', marginBottom: 4 }}>Артикул *</label>
-                <input value={newPart.sku} onChange={e => setNewPart({ ...newPart, sku: e.target.value })} placeholder="SCR-IP13" style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14 }} />
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <div>
-                  <label style={{ fontSize: 13, color: '#5f6368', display: 'block', marginBottom: 4 }}>Цена закупа</label>
-                  <input type="number" value={newPart.purchase_price || ''} onChange={e => setNewPart({ ...newPart, purchase_price: Math.round(Number(e.target.value)) })} style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14 }} />
-                </div>
-                <div>
-                  <label style={{ fontSize: 13, color: '#5f6368', display: 'block', marginBottom: 4 }}>Цена продажи</label>
-                  <input type="number" value={newPart.selling_price || ''} onChange={e => setNewPart({ ...newPart, selling_price: Math.round(Number(e.target.value)) })} style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14 }} />
-                </div>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <div>
-                  <label style={{ fontSize: 13, color: '#5f6368', display: 'block', marginBottom: 4 }}>Начальный остаток</label>
-                  <input type="number" value={newPart.quantity} onChange={e => setNewPart({ ...newPart, quantity: Math.round(Number(e.target.value)) })} style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14 }} />
-                </div>
-                <div>
-                  <label style={{ fontSize: 13, color: '#5f6368', display: 'block', marginBottom: 4 }}>Мин. уровень</label>
-                  <input type="number" value={newPart.min_quantity} onChange={e => setNewPart({ ...newPart, min_quantity: Math.round(Number(e.target.value)) })} style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14 }} />
-                </div>
-              </div>
-              <button className="btn-primary" onClick={handleCreate} disabled={creating || !newPart.name || !newPart.sku} style={{ marginTop: 8 }}>
-                {creating ? 'Сохранение...' : 'Создать'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <CrudModal
+          title="Новая запчасть"
+          saveLabel="Создать"
+          loading={creating}
+          onSave={handleCreate}
+          onClose={() => setShowCreate(false)}
+          fields={[
+            { label: 'Название', name: 'name', value: newName, onChange: v => setNewName(String(v)), required: true, placeholder: 'Экран iPhone 13' },
+            { label: 'Артикул', name: 'sku', value: newSku, onChange: v => setNewSku(String(v)), hint: 'авто' },
+            { label: 'Категория', name: 'category_id', type: 'select', value: newCategoryId || '', onChange: v => setNewCategoryId(Number(v) || null), options: categories.map(c => ({ label: c.name, value: c.id })) },
+            { label: 'Модель', name: 'model_name', value: newModel, onChange: v => setNewModel(String(v)), placeholder: 'iPhone 11 ORG' },
+            { label: 'Цена закупа', name: 'purchase_price', type: 'number', value: newPurchase || '', onChange: v => setNewPurchase(Number(v)) },
+            { label: 'Цена продажи', name: 'selling_price', type: 'number', value: newSelling || '', onChange: v => setNewSelling(Number(v)) },
+            { label: 'Начальный остаток', name: 'quantity', type: 'number', value: newQty || '', onChange: v => setNewQty(Number(v)) },
+            { label: 'Мин. уровень', name: 'min_quantity', type: 'number', value: newMinQty || '', onChange: v => setNewMinQty(Number(v)) },
+            { label: 'Ед. изм.', name: 'unit', type: 'select', value: newUnit, onChange: v => setNewUnit(String(v)), options: [{ label: 'шт', value: 'шт' }, { label: 'комплект', value: 'комплект' }, { label: 'метр', value: 'метр' }] },
+            { label: 'Фото (URL)', name: 'photo_url', value: newPhoto, onChange: v => setNewPhoto(String(v)) },
+          ]}
+        >
+          <TagSelect selected={newTags} onChange={setNewTags} />
+        </CrudModal>
       )}
 
       {/* Modal: редактировать / оприходовать */}
@@ -299,43 +369,49 @@ export function PartsPage() {
         }} onClick={() => setEditPart(null)}>
           <div style={{
             background: '#fff', borderRadius: 12, padding: 24,
-            maxWidth: 520, width: '90%', maxHeight: '90vh', overflow: 'auto',
+            maxWidth: 560, width: '90%', maxHeight: '90vh', overflow: 'auto',
             boxShadow: '0 8px 32px rgba(0,0,0,0.2)'
           }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <h3 style={{ margin: 0 }}>{editPart.name}</h3>
-              <button onClick={() => setEditPart(null)} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: '#5f6368' }}>×</button>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={() => handleDeletePart(editPart.id, editPart.name)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: 13 }} title="Удалить запчасть">
+                  <Trash2 size={16} />
+                </button>
+                <button onClick={() => setEditPart(null)} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: '#5f6368' }}>×</button>
+              </div>
             </div>
 
             <p style={{ fontSize: 13, color: '#5f6368', marginBottom: 16 }}>
-              Артикул: <code>{editPart.sku}</code> · Текущий остаток: <strong>{editPart.quantity}</strong>
+              Артикул: <code>{editPart.sku}</code> · Остаток: <strong>{editPart.quantity}</strong>
             </p>
 
-            {/* Редактирование карточки */}
-            <h4 style={{ fontSize: 14, marginBottom: 8, color: '#202124' }}>Редактировать</h4>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
-              <div>
-                <label style={{ fontSize: 13, color: '#5f6368', display: 'block', marginBottom: 4 }}>Название</label>
-                <input value={editData.name} onChange={e => setEditData({ ...editData, name: e.target.value })} style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14 }} />
+            {/* Редактирование */}
+            <h4 style={{ fontSize: 14, marginBottom: 8 }}>Редактировать</h4>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 8 }}>
+              <div><label style={{ fontSize: 11, color: '#5f6368' }}>Название</label><input value={editData.name} onChange={e => setEditData({ ...editData, name: e.target.value })} style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14 }} /></div>
+              <div><label style={{ fontSize: 11, color: '#5f6368' }}>Артикул</label><input value={editData.sku} onChange={e => setEditData({ ...editData, sku: e.target.value })} style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14 }} /></div>
+              <div><label style={{ fontSize: 11, color: '#5f6368' }}>Категория</label>
+                <select value={editData.category_id || ''} onChange={e => setEditData({ ...editData, category_id: Number(e.target.value) || null })}
+                  style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14, background: '#fff' }}>
+                  <option value="">—</option>
+                  {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
               </div>
-              <div>
-                <label style={{ fontSize: 13, color: '#5f6368', display: 'block', marginBottom: 4 }}>Артикул</label>
-                <input value={editData.sku} onChange={e => setEditData({ ...editData, sku: e.target.value })} style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14 }} />
-              </div>
-              <div>
-                <label style={{ fontSize: 13, color: '#5f6368', display: 'block', marginBottom: 4 }}>Цена закупа</label>
-                <input type="number" value={editData.purchase_price || ''} onChange={e => setEditData({ ...editData, purchase_price: Math.round(Number(e.target.value)) })} style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14 }} />
-              </div>
-              <div>
-                <label style={{ fontSize: 13, color: '#5f6368', display: 'block', marginBottom: 4 }}>Цена продажи</label>
-                <input type="number" value={editData.selling_price || ''} onChange={e => setEditData({ ...editData, selling_price: Math.round(Number(e.target.value)) })} style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14 }} />
-              </div>
-              <div>
-                <label style={{ fontSize: 13, color: '#5f6368', display: 'block', marginBottom: 4 }}>Мин. уровень</label>
-                <input type="number" value={editData.min_quantity} onChange={e => setEditData({ ...editData, min_quantity: Math.round(Number(e.target.value)) })} style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14 }} />
+              <div><label style={{ fontSize: 11, color: '#5f6368' }}>Модель</label><input value={editData.model_name} onChange={e => setEditData({ ...editData, model_name: e.target.value })} style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14 }} /></div>
+              <div><label style={{ fontSize: 11, color: '#5f6368' }}>Цена закупа</label><input type="number" value={editData.purchase_price || ''} onChange={e => setEditData({ ...editData, purchase_price: Math.round(Number(e.target.value)) })} style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14 }} /></div>
+              <div><label style={{ fontSize: 11, color: '#5f6368' }}>Цена продажи</label><input type="number" value={editData.selling_price || ''} onChange={e => setEditData({ ...editData, selling_price: Math.round(Number(e.target.value)) })} style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14 }} /></div>
+              <div><label style={{ fontSize: 11, color: '#5f6368' }}>Мин. уровень</label><input type="number" value={editData.min_quantity} onChange={e => setEditData({ ...editData, min_quantity: Math.round(Number(e.target.value)) })} style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14 }} /></div>
+              <div><label style={{ fontSize: 11, color: '#5f6368' }}>Ед. изм.</label>
+                <select value={editData.unit} onChange={e => setEditData({ ...editData, unit: e.target.value })}
+                  style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14, background: '#fff' }}>
+                  <option value="шт">шт</option><option value="комплект">комплект</option><option value="метр">метр</option>
+                </select>
               </div>
             </div>
-            <button className="btn-primary" onClick={handleSaveEdit} disabled={saving} style={{ marginBottom: 20 }}>
+            <TagSelect selected={editTags} onChange={setEditTags} />
+            <button className="btn-primary" onClick={handleSaveEdit} disabled={saving} style={{ marginBottom: 20, marginTop: 12 }}>
               <Save size={16} /> {saving ? 'Сохранение...' : 'Сохранить'}
             </button>
 

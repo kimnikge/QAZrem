@@ -15,6 +15,7 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Detka0300304345';
 let adminToken = '';
 let partId = 0;
 let partQuantityBefore = 0;
+let supplierId = 0;
 const TEST_SKU = `TST-${Date.now()}`;
 
 function auth(token: string) {
@@ -27,6 +28,12 @@ beforeAll(async () => {
     .send({ login: ADMIN_LOGIN, password: ADMIN_PASSWORD })
     .expect(200);
   adminToken = res.body.token;
+
+  // Получаем ID поставщика для тестов движения
+  const sup = await request(app)
+    .get('/suppliers')
+    .set(auth(adminToken));
+  if (sup.body.length > 0) supplierId = sup.body[0].id;
 });
 
 afterAll(async () => {
@@ -123,7 +130,7 @@ describe('Склад: приёмка и списание', () => {
     await request(app)
       .post('/parts/movement')
       .set(auth(adminToken))
-      .send({ part_id: partId, quantity: 5, document: 'Накладная №123' })
+      .send({ part_id: partId, quantity: 5, document: 'Накладная №123', supplier_id: supplierId || undefined })
       .expect(201);
 
     const res = await request(app)

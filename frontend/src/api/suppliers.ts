@@ -26,3 +26,7 @@ export function updateSupplier(id: number, data: Partial<CreateSupplierInput>) {
 export function deleteSupplier(id: number) {
   return request<{ message: string }>(`/suppliers/${id}`, { method: 'DELETE' });
 }
+
+export function returnToSupplier(supplierId: number, data: { batch_id: number; part_id: number; quantity: number; reason?: string }) {
+  return request<{ message: string }>(`/suppliers/${supplierId}/return`, { method: 'POST', body: JSON.stringify(data) });
+}

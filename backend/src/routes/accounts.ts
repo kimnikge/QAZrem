@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { pool } from '../db/pool.js';
 import { NotFoundError, BadRequestError } from '../lib/errors.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
+import { buildPatchQuery } from '../lib/query-builder.js';
 
 export const accountsRouter = Router();
 accountsRouter.use(requireAuth);
@@ -36,21 +37,18 @@ accountsRouter.post('/', requireRole('admin'), async (req, res, next) => {
 accountsRouter.patch('/:id', requireRole('admin'), async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { name, is_active } = z.object({
+    const input = z.object({
       name: z.string().min(1).optional(),
-      is_active: z.boolean().optional()
+      is_active: z.boolean().optional(),
     }).parse(req.body);
-    const fields: string[] = [];
-    const values: unknown[] = [];
-    let idx = 1;
-    if (name !== undefined) { fields.push(`name = $${idx++}`); values.push(name); }
-    if (is_active !== undefined) { fields.push(`is_active = $${idx++}`); values.push(is_active); }
-    if (fields.length === 0) return res.json({ message: 'Нет изменений' });
-    values.push(id);
-    await pool.query(
-      `UPDATE company_accounts SET ${fields.join(', ')} WHERE id = $${idx}`,
-      values
-    );
+
+    const patch = buildPatchQuery(input, ['name', 'is_active'], 'company_accounts');
+
+    if (!patch) return res.json({ message: 'Нет изменений' });
+
+    patch.values[patch.values.length - 1] = id;
+    await pool.query(patch.sql, patch.values);
+
     res.json({ message: 'Обновлено' });
   } catch (error) { next(error); }
 });

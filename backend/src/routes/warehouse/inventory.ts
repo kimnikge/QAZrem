@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { pool } from '../../db/pool.js';
 import { NotFoundError, BadRequestError } from '../../lib/errors.js';
 import { requireAuth, requireRole } from '../../middleware/auth.js';
+import { buildPatchQuery } from '../../lib/query-builder.js';
 
 export const warehouseInventoryRouter = Router();
 
@@ -144,27 +145,20 @@ warehouseInventoryRouter.patch('/equipment/:id', requireRole('admin'), async (re
     const { id } = req.params;
     const input = createEquipmentSchema.partial().parse(req.body);
 
-    const fields: string[] = [];
-    const values: unknown[] = [];
-    let idx = 1;
+    const patch = buildPatchQuery(
+      input,
+      ['name', 'master_id', 'quantity', 'notes'],
+      'equipment',
+    );
 
-    for (const [key, value] of Object.entries(input)) {
-      if (value !== undefined) {
-        fields.push(`${key} = $${idx++}`);
-        values.push(value);
-      }
-    }
-
-    if (fields.length === 0) {
+    if (!patch) {
       res.json({ message: 'Нет полей для обновления' });
       return;
     }
 
-    values.push(id);
-    const result = await pool.query(
-      `UPDATE equipment SET ${fields.join(', ')} WHERE id = $${idx} RETURNING *`,
-      values
-    );
+    patch.values[patch.values.length - 1] = id;
+
+    const result = await pool.query(`${patch.sql} RETURNING *`, patch.values);
     if (result.rows.length === 0) throw new NotFoundError('Оборудование');
     res.json(result.rows[0]);
   } catch (error) {

@@ -4,7 +4,14 @@ import { pool } from '../db/pool.js';
 import { BadRequestError, NotFoundError } from '../lib/errors.js';
 import { idParamSchema } from '../lib/validation.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
-import { sendTelegramMessage } from '../services/telegram.js';
+import { parsePagination } from '../middleware/pagination.js';
+import {
+  createOrder,
+  updateOrderStatus,
+  assignPartToOrder,
+  recalcOrderCost,
+} from '../services/order.service.js';
+import { STATUS_TRANSITIONS } from '../types/domain.js';
 
 export const ordersRouter = Router();
 
@@ -95,57 +102,91 @@ const assignPartsSchema = z.object({
   quantity: z.number().int().positive()
 });
 
-// Пересчёт стоимости заказа на основе запчастей и услуг
-async function recalcOrderCost(client: import('pg').PoolClient | typeof pool, orderId: number): Promise<void> {
-  const result = await client.query(
-    `SELECT
-      COALESCE((SELECT SUM(op.selling_price_at_moment * op.quantity_used) FROM order_parts op WHERE op.order_id = $1), 0) +
-      COALESCE((SELECT SUM(osrv.price_at_moment * osrv.quantity) FROM order_services osrv WHERE osrv.order_id = $1), 0) AS total`,
-    [orderId]
-  );
-  const cost = Math.round(Number(result.rows[0].total));
-  await client.query('UPDATE orders SET cost = $1 WHERE id = $2', [cost, orderId]);
-}
-
-// Допустимые переходы статусов
-const STATUS_TRANSITIONS: Record<string, string[]> = {
-  new: ['diagnosis', 'cancelled'],
-  diagnosis: ['waiting_parts', 'repair', 'ready', 'cancelled'],
-  waiting_parts: ['repair', 'cancelled'],
-  repair: ['ready', 'cancelled'],
-  ready: ['completed', 'cancelled'],
-  completed: [],
-  cancelled: []
-};
+// recalcOrderCost и STATUS_TRANSITIONS импортируются из services/order.service.ts
 
 // ============================================================
 // GET /orders — список заказов с фильтрами и пагинацией
 // ============================================================
-ordersRouter.get('/', async (req, res, next) => {
+ordersRouter.get('/', parsePagination(), async (req, res, next) => {
   try {
     const { status, master_id, search, overdue, my, group_id,
-      created_from, created_to, brand, model, client_id,
-      limit = '50', offset = '0' } = req.query;
-    const limitNum = Math.min(Math.max(parseInt(limit as string, 10) || 50, 1), 200);
-    const offsetNum = Math.max(parseInt(offset as string, 10) || 0, 0);
+      created_from, created_to, brand, model, client_id } = req.query;
+    const { limit, offset } = req.pagination;
 
-    let sql = `
-      SELECT
-        o.id, o.device_id, o.master_id, o.status_id,
-        o.issue_description, o.diagnosis,
-        o.cost, o.estimated_cost, o.prepaid, o.discount, o.internal_comment,
-        o.deadline, o.status_deadline, o.priority, o.source,
-        o.master_commission_pct, o.group_id, o.location_id,
-        o.created_at, o.completed_at,
-        o.password, o.face_id, o.completeness, o.condition, o.appearance, o.manager_notes, o.order_type,
-        o.image_url,
-        (o.deadline IS NOT NULL AND o.deadline < NOW() AND os.is_final = FALSE) AS is_overdue,
-        os.name AS status_name, os.slug AS status_slug,
-        d.brand, d.model, d.imei,
-        c.id AS client_id, c.name AS client_name, c.phone AS client_phone, c.address AS client_address,
-        u.name AS master_name, og.name AS group_name, l.name AS location_name,
-        cu.name AS created_by_name
-      FROM orders o
+    // Строим WHERE-условия и параметры
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+    let idx = 1;
+
+    if (status) {
+      conditions.push(`os.slug = $${idx++}`);
+      params.push(status);
+    }
+    if (master_id) {
+      conditions.push(`o.master_id = $${idx++}`);
+      params.push(Number(master_id));
+    }
+    if (search) {
+      conditions.push(`(c.name ILIKE $${idx} OR c.phone ILIKE $${idx} OR d.imei ILIKE $${idx})`);
+      params.push(`%${search}%`);
+      idx++;
+    }
+    if (overdue === 'true') {
+      conditions.push(`o.deadline IS NOT NULL AND o.deadline < NOW() AND os.is_final = FALSE`);
+    }
+    if (my === 'true' && req.user?.userId) {
+      conditions.push(`o.master_id = $${idx++}`);
+      params.push(req.user.userId);
+    }
+    if (group_id) {
+      if (group_id === 'null') {
+        conditions.push('o.group_id IS NULL');
+      } else {
+        conditions.push(`o.group_id = $${idx++}`);
+        params.push(Number(group_id));
+      }
+    }
+    if (created_from) {
+      conditions.push(`o.created_at >= $${idx++}`);
+      params.push(created_from);
+    }
+    if (created_to) {
+      conditions.push(`o.created_at <= $${idx++}`);
+      params.push(created_to);
+    }
+    if (brand) {
+      conditions.push(`d.brand ILIKE $${idx++}`);
+      params.push(`%${brand}%`);
+    }
+    if (model) {
+      conditions.push(`d.model ILIKE $${idx++}`);
+      params.push(`%${model}%`);
+    }
+    if (client_id) {
+      conditions.push(`c.id = $${idx++}`);
+      params.push(Number(client_id));
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const selectClause = `
+      o.id, o.device_id, o.master_id, o.status_id,
+      o.issue_description, o.diagnosis,
+      o.cost, o.estimated_cost, o.prepaid, o.discount, o.internal_comment,
+      o.deadline, o.status_deadline, o.priority, o.source,
+      o.master_commission_pct, o.group_id, o.location_id,
+      o.created_at, o.completed_at,
+      o.password, o.face_id, o.completeness, o.condition, o.appearance, o.manager_notes, o.order_type,
+      o.image_url,
+      (o.deadline IS NOT NULL AND o.deadline < NOW() AND os.is_final = FALSE) AS is_overdue,
+      os.name AS status_name, os.slug AS status_slug,
+      d.brand, d.model, d.imei,
+      c.id AS client_id, c.name AS client_name, c.phone AS client_phone, c.address AS client_address,
+      u.name AS master_name, og.name AS group_name, l.name AS location_name,
+      cu.name AS created_by_name`;
+
+    const fromClause = `
+      orders o
       JOIN order_statuses os ON os.id = o.status_id
       JOIN devices d ON d.id = o.device_id
       JOIN clients c ON c.id = d.client_id
@@ -158,78 +199,25 @@ ordersRouter.get('/', async (req, res, next) => {
         LEFT JOIN users us ON us.id = uh.user_id
         WHERE uh.order_id = o.id AND uh.from_status_id IS NULL
         ORDER BY uh.created_at LIMIT 1
-      ) cu ON true
-      WHERE 1=1
-    `;
-    const params: unknown[] = [];
-    let idx = 1;
+      ) cu ON true`;
 
-    if (status) {
-      sql += ` AND os.slug = $${idx++}`;
-      params.push(status);
-    }
-    if (master_id) {
-      sql += ` AND o.master_id = $${idx++}`;
-      params.push(Number(master_id));
-    }
-    if (search) {
-      sql += ` AND (c.name ILIKE $${idx} OR c.phone ILIKE $${idx} OR d.imei ILIKE $${idx})`;
-      params.push(`%${search}%`);
-      idx++;
-    }
-    if (overdue === 'true') {
-      sql += ` AND o.deadline IS NOT NULL AND o.deadline < NOW() AND os.is_final = FALSE`;
-    }
-    if (my === 'true' && req.user?.userId) {
-      sql += ` AND o.master_id = $${idx++}`;
-      params.push(req.user.userId);
-    }
-    if (group_id) {
-      if (group_id === 'null') {
-        sql += ' AND o.group_id IS NULL';
-      } else {
-        sql += ` AND o.group_id = $${idx++}`;
-        params.push(Number(group_id));
-      }
-    }
-    if (created_from) {
-      sql += ` AND o.created_at >= $${idx++}`;
-      params.push(created_from);
-    }
-    if (created_to) {
-      sql += ` AND o.created_at <= $${idx++}`;
-      params.push(created_to);
-    }
-    if (brand) {
-      sql += ` AND d.brand ILIKE $${idx++}`;
-      params.push(`%${brand}%`);
-    }
-    if (model) {
-      sql += ` AND d.model ILIKE $${idx++}`;
-      params.push(`%${model}%`);
-    }
-    if (client_id) {
-      sql += ` AND c.id = $${idx++}`;
-      params.push(Number(client_id));
-    }
+    // Основной запрос
+    const sql = `SELECT ${selectClause} FROM ${fromClause} ${whereClause}
+      ORDER BY o.created_at DESC
+      LIMIT $${idx++} OFFSET $${idx++}`;
 
-    // Общее количество (для пагинации)
-    const countSql = sql.replace(
-      /SELECT[\s\S]*?FROM/,
-      'SELECT COUNT(*)::int AS total FROM'
-    );
+    const allParams = [...params, limit, offset];
+    const result = await pool.query(sql, allParams);
+
+    // COUNT — отдельный надёжный запрос (без regex!)
+    const countSql = `SELECT COUNT(*)::int AS total FROM ${fromClause} ${whereClause}`;
     const countResult = await pool.query(countSql, params);
 
-    sql += ' ORDER BY o.created_at DESC';
-    sql += ` LIMIT $${idx++} OFFSET $${idx++}`;
-    params.push(limitNum, offsetNum);
-
-    const result = await pool.query(sql, params);
     res.json({
       orders: result.rows,
       total: countResult.rows[0].total,
-      limit: limitNum,
-      offset: offsetNum
+      limit,
+      offset,
     });
   } catch (error) {
     next(error);
@@ -446,7 +434,7 @@ ordersRouter.get('/:id/statuses', async (req, res, next) => {
     const placeholders = allowedSlugs.map((_, i) => `$${i + 1}`).join(', ');
     const result = await pool.query(
       `SELECT id, name, slug FROM order_statuses WHERE slug IN (${placeholders}) ORDER BY id`,
-      allowedSlugs
+      [...allowedSlugs]
     );
     res.json({ current: currentSlug, available: result.rows });
   } catch (error) {
@@ -625,448 +613,51 @@ ordersRouter.patch('/:id', requireRole('admin', 'master'), async (req, res, next
 });
 
 // ============================================================
-// POST /orders — создание заказа
+// POST /orders — создание заказа (делегировано сервису)
 // ============================================================
 ordersRouter.post('/', requireRole('admin', 'reception'), async (req, res, next) => {
-  const client = await pool.connect();
   try {
-    await client.query('BEGIN');
-
-    let deviceId: number;
-
-    // Сценарий A: передан существующий device_id
+    // Валидация — одна из двух схем
     if (req.body.device_id) {
-      const input = createOrderWithExistingDeviceSchema.parse(req.body);
-
-      // Валидация: скидка не может превышать стоимость
-      if (input.discount !== undefined && input.estimated_cost !== undefined && input.discount > input.estimated_cost) {
-        throw new BadRequestError('Скидка не может превышать стоимость заказа');
-      }
-
-      const device = await client.query('SELECT id, client_id, brand, model FROM devices WHERE id = $1', [input.device_id]);
-      if (device.rows.length === 0) throw new NotFoundError('Устройство');
-      deviceId = device.rows[0].id;
-
-      // Автодобавление в каталог
-      await client.query(
-        `INSERT INTO device_catalog (brand, model)
-         VALUES ($1, $2)
-         ON CONFLICT (brand, model) DO NOTHING`,
-        [device.rows[0].brand, device.rows[0].model]
-      );
-    }
-    // Сценарий B: новый клиент + новое устройство
-    else {
-      const input = createOrderWithNewDeviceSchema.parse(req.body);
-
-      // Валидация: скидка не может превышать стоимость
-      if (input.discount !== undefined && input.estimated_cost !== undefined && input.discount > input.estimated_cost) {
-        throw new BadRequestError('Скидка не может превышать стоимость заказа');
-      }
-
-      // Ищем клиента по телефону
-      let clientResult = await client.query(
-        'SELECT id FROM clients WHERE phone = $1',
-        [input.client.phone]
-      );
-
-      let clientId: number;
-      if (clientResult.rows.length > 0) {
-        clientId = clientResult.rows[0].id;
-      } else {
-        // Создаём нового клиента
-        clientResult = await client.query(
-          `INSERT INTO clients (name, phone, email, address)
-           VALUES ($1, $2, $3, $4)
-           RETURNING id`,
-          [input.client.name, input.client.phone, input.client.email || null, input.client.address || null]
-        );
-        clientId = clientResult.rows[0].id;
-      }
-
-      // Создаём устройство
-      const deviceResult = await client.query(
-        `INSERT INTO devices (client_id, brand, model, imei, serial_number, color)
-         VALUES ($1, $2, $3, $4, $5, $6)
-         RETURNING id`,
-        [
-          clientId,
-          input.device.brand,
-          input.device.model,
-          input.device.imei,
-          input.device.serial_number || null,
-          input.device.color || null
-        ]
-      );
-      deviceId = deviceResult.rows[0].id;
-
-      // Автодобавление в каталог
-      await client.query(
-        `INSERT INTO device_catalog (brand, model)
-         VALUES ($1, $2)
-         ON CONFLICT (brand, model) DO NOTHING`,
-        [input.device.brand, input.device.model]
-      );
+      createOrderWithExistingDeviceSchema.parse(req.body);
+    } else {
+      createOrderWithNewDeviceSchema.parse(req.body);
     }
 
-    // Получаем ID статуса "new"
-    const statusResult = await client.query(
-      "SELECT id FROM order_statuses WHERE slug = 'new'"
-    );
-    const newStatusId = statusResult.rows[0].id;
-
-    const masterId = req.body.master_id || null;
-
-    // Определяем процент комиссии мастера
-    let masterCommissionPct = req.body.master_commission_pct;
-    if (masterCommissionPct === undefined && masterId) {
-      const masterUser = await client.query(
-        'SELECT default_commission_pct FROM users WHERE id = $1',
-        [masterId]
-      );
-      masterCommissionPct = masterUser.rows.length > 0
-        ? Number(masterUser.rows[0].default_commission_pct)
-        : 50;
-    }
-    if (masterCommissionPct === undefined) masterCommissionPct = 50;
-
-    // Создаём заказ
-    const orderResult = await client.query(
-      `INSERT INTO orders (device_id, master_id, status_id, issue_description, deadline, priority, source, estimated_cost, discount, master_commission_pct, group_id, location_id, password, face_id, completeness, condition, appearance, manager_notes, order_type, image_url)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
-       RETURNING id`,
-      [
-        deviceId,
-        masterId,
-        newStatusId,
-        req.body.issue_description,
-        req.body.deadline || null,
-        req.body.priority || 'normal',
-        req.body.source || null,
-        req.body.estimated_cost || 0,
-        req.body.discount || 0,
-        masterCommissionPct,
-        req.body.group_id || null,
-        req.body.location_id || null,
-        req.body.password || null,
-        req.body.face_id || false,
-        req.body.completeness || null,
-        req.body.condition || null,
-        req.body.appearance || null,
-        req.body.manager_notes || null,
-        req.body.order_type || 'paid',
-        req.body.image_url || null
-      ]
-    );
-    const orderId = orderResult.rows[0].id;
-
-    // Запись в history
-    await client.query(
-      `INSERT INTO order_history (order_id, user_id, from_status_id, to_status_id, comment)
-       VALUES ($1, $2, NULL, $3, 'Создан заказ')`,
-      [orderId, req.user!.userId, newStatusId]
-    );
-
-    // Списание запчастей (если переданы) — FIFO
-    const parts: Array<{ part_id: number; quantity: number }> = req.body.parts || [];
-    for (const part of parts) {
-      // Проверяем остаток
-      const stockResult = await client.query(
-        'SELECT id, quantity, selling_price FROM parts WHERE id = $1 FOR UPDATE',
-        [part.part_id]
-      );
-      if (stockResult.rows.length === 0) {
-        throw new NotFoundError(`Запчасть с id=${part.part_id}`);
-      }
-      if (stockResult.rows[0].quantity < part.quantity) {
-        throw new BadRequestError(
-          `Недостаточно запчасти #${part.part_id} на складе (остаток: ${stockResult.rows[0].quantity}, требуется: ${part.quantity})`
-        );
-      }
-
-      const sellingPrice = Number(stockResult.rows[0].selling_price);
-
-      // FIFO: списываем из партий
-      const batches = await client.query(
-        `SELECT id, batch_number, current_quantity, purchase_price
-         FROM part_batches WHERE part_id = $1 AND current_quantity > 0
-         ORDER BY received_at ASC FOR UPDATE`,
-        [part.part_id]
-      );
-
-      let remaining = part.quantity;
-      for (const batch of batches.rows) {
-        if (remaining <= 0) break;
-        const take = Math.min(remaining, batch.current_quantity);
-        remaining -= take;
-
-        await client.query(
-          'UPDATE part_batches SET current_quantity = current_quantity - $1 WHERE id = $2',
-          [take, batch.id]
-        );
-
-        // Запись в order_parts с batch_id
-        await client.query(
-          `INSERT INTO order_parts (order_id, part_id, quantity_used, purchase_price_at_moment, selling_price_at_moment, batch_id)
-           VALUES ($1, $2, $3, $4, $5, $6)`,
-          [orderId, part.part_id, take, batch.purchase_price, sellingPrice, batch.id]
-        );
-
-        // Запись в part_movements
-        await client.query(
-          `INSERT INTO part_movements (part_id, type, quantity, order_id, batch_id, batch_number)
-           VALUES ($1, 'outgoing', $2, $3, $4, $5)`,
-          [part.part_id, take, orderId, batch.id, batch.batch_number]
-        );
-      }
-
-      // Проверяем, что весь объём покрыт партиями
-      if (remaining > 0) {
-        throw new BadRequestError(
-          `Несоответствие остатков по запчасти #${part.part_id}: не хватает ${remaining}шт в партиях`
-        );
-      }
-
-      // Уменьшаем общий остаток
-      await client.query(
-        'UPDATE parts SET quantity = quantity - $1 WHERE id = $2',
-        [part.quantity, part.part_id]
-      );
-    }
-
-    // Добавление услуг (если переданы)
-    const services: Array<{ service_id: number; quantity: number }> = req.body.services || [];
-    for (const svc of services) {
-      const svcResult = await client.query(
-        'SELECT price, master_commission_pct FROM services WHERE id = $1',
-        [svc.service_id]
-      );
-      if (svcResult.rows.length === 0) {
-        throw new NotFoundError(`Услуга с id=${svc.service_id}`);
-      }
-      await client.query(
-        `INSERT INTO order_services (order_id, service_id, quantity, price_at_moment, master_commission_pct_at_moment)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [orderId, svc.service_id, svc.quantity || 1, Number(svcResult.rows[0].price), Number(svcResult.rows[0].master_commission_pct)]
-      );
-    }
-
-    await client.query('COMMIT');
-
-    // Уведомление в Telegram
-    const fullOrder = await pool.query(
-      `SELECT o.id, c.name AS client_name, c.phone, d.brand, d.model, o.issue_description
-       FROM orders o
-       JOIN devices d ON d.id = o.device_id
-       JOIN clients c ON c.id = d.client_id
-       WHERE o.id = $1`,
-      [orderId]
-    );
-
-    const o = fullOrder.rows[0];
-    // Уведомление в Telegram (не блокирует создание заказа)
-    try {
-      await sendTelegramMessage(
-        [
-          '<b>🆕 Новый заказ</b>',
-          `№${o.id} | ${o.brand} ${o.model}`,
-          `Клиент: ${o.client_name} (${o.phone})`,
-          `Проблема: ${o.issue_description}`
-        ].join('\n')
-      );
-    } catch (tgError) {
-      console.error('Telegram notification failed:', tgError instanceof Error ? tgError.message : tgError);
-    }
-
+    const orderId = await createOrder(req.body, req.user!.userId);
     res.status(201).json({ id: orderId });
   } catch (error) {
-    await client.query('ROLLBACK');
     next(error);
-  } finally {
-    client.release();
   }
 });
 
 // ============================================================
-// PATCH /orders/:id/status — смена статуса
+// PATCH /orders/:id/status — смена статуса (делегировано сервису)
 // ============================================================
 ordersRouter.patch('/:id/status', requireRole('admin', 'master'), async (req, res, next) => {
-  const dbClient = await pool.connect();
   try {
-    const { id } = req.params;
-    const input = updateStatusSchema.parse(req.body);
+    const id = idParamSchema.parse(req.params.id);
+    const { status_slug, comment } = updateStatusSchema.parse(req.body);
 
-    await dbClient.query('BEGIN');
-
-    // Получаем текущий статус заказа
-    const order = await dbClient.query(
-      'SELECT o.status_id, o.cost, o.discount, os.slug AS current_slug, os.is_final FROM orders o JOIN order_statuses os ON os.id = o.status_id WHERE o.id = $1',
-      [id]
-    );
-    if (order.rows.length === 0) throw new NotFoundError('Заказ');
-
-    const { current_slug, is_final, cost, discount } = order.rows[0];
-
-    if (is_final) {
-      throw new BadRequestError('Нельзя изменить статус финального заказа');
-    }
-
-    // Проверяем допустимость перехода
-    const allowedSlugs = STATUS_TRANSITIONS[current_slug] || [];
-    if (!allowedSlugs.includes(input.status_slug)) {
-      throw new BadRequestError(`Нельзя перевести заказ из статуса «${current_slug}» в «${input.status_slug}»`);
-    }
-
-    // Получаем ID нового статуса
-    const newStatus = await dbClient.query(
-      'SELECT id, is_final FROM order_statuses WHERE slug = $1',
-      [input.status_slug]
-    );
-    if (newStatus.rows.length === 0) throw new NotFoundError('Статус');
-
-    const newStatusId = newStatus.rows[0].id;
-    const newIsFinal = newStatus.rows[0].is_final;
-
-    // При переходе в completed проверяем, что заказ полностью оплачен
-    if (input.status_slug === 'completed') {
-      const paymentSum = await dbClient.query(
-        `SELECT COALESCE(SUM(amount), 0) AS total_paid FROM payments WHERE order_id = $1`,
-        [id]
-      );
-      const totalPaid = Math.round(Number(paymentSum.rows[0].total_paid));
-      const totalCost = Math.round(Number(cost)) - Math.round(Number(discount));
-      if (totalPaid < totalCost) {
-        throw new BadRequestError(`Нельзя выдать заказ: не полностью оплачен (оплачено ${totalPaid} из ${totalCost} ₸)`);
-      }
-    }
-
-    // Обновляем статус
-    let updateSql = 'UPDATE orders SET status_id = $1';
-    const updateParams: unknown[] = [newStatusId];
-    let idx = 2;
-
-    if (newIsFinal && input.status_slug === 'completed') {
-      updateSql += `, completed_at = NOW()`;
-    }
-
-    updateSql += ` WHERE id = $${idx} RETURNING id`;
-    updateParams.push(id);
-
-    await dbClient.query(updateSql, updateParams);
-
-    // Запись в history
-    await dbClient.query(
-      `INSERT INTO order_history (order_id, user_id, from_status_id, to_status_id, comment)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [id, req.user!.userId, order.rows[0].status_id, newStatusId, input.comment || null]
-    );
-
-    await dbClient.query('COMMIT');
-
-    res.json({ message: 'Статус обновлён', status: input.status_slug });
+    await updateOrderStatus(id, status_slug, req.user!.userId, comment);
+    res.json({ message: 'Статус обновлён', status: status_slug });
   } catch (error) {
-    await dbClient.query('ROLLBACK');
     next(error);
-  } finally {
-    dbClient.release();
   }
 });
 
 // ============================================================
-// POST /orders/:id/parts — списание запчасти на заказ (FIFO)
+// POST /orders/:id/parts — списание запчасти на заказ (FIFO, делегировано сервису)
 // ============================================================
 ordersRouter.post('/:id/parts', requireRole('admin', 'master'), async (req, res, next) => {
-  const dbClient = await pool.connect();
   try {
-    const { id } = req.params;
-    const input = assignPartsSchema.parse(req.body);
+    const orderId = idParamSchema.parse(req.params.id);
+    const { part_id, quantity } = assignPartsSchema.parse(req.body);
 
-    await dbClient.query('BEGIN');
-
-    // Проверяем заказ
-    const order = await dbClient.query(
-      `SELECT o.id, os.is_final FROM orders o
-       JOIN order_statuses os ON os.id = o.status_id
-       WHERE o.id = $1`,
-      [id]
-    );
-    if (order.rows.length === 0) throw new NotFoundError('Заказ');
-    if (order.rows[0].is_final) {
-      throw new BadRequestError('Нельзя списать запчасть на завершённый заказ');
-    }
-
-    // Проверяем остаток
-    const part = await dbClient.query(
-      'SELECT id, name, selling_price, quantity FROM parts WHERE id = $1 FOR UPDATE',
-      [input.part_id]
-    );
-    if (part.rows.length === 0) throw new NotFoundError('Запчасть');
-
-    const { name, selling_price, quantity } = part.rows[0];
-
-    if (quantity < input.quantity) {
-      throw new BadRequestError(
-        `Недостаточно запчастей "${name}". Доступно: ${quantity}, требуется: ${input.quantity}`
-      );
-    }
-
-    // FIFO: списываем из партий
-    const batches = await dbClient.query(
-      `SELECT id, batch_number, current_quantity, purchase_price
-       FROM part_batches WHERE part_id = $1 AND current_quantity > 0
-       ORDER BY received_at ASC FOR UPDATE`,
-      [input.part_id]
-    );
-
-    let remaining = input.quantity;
-    for (const batch of batches.rows) {
-      if (remaining <= 0) break;
-      const take = Math.min(remaining, batch.current_quantity);
-      remaining -= take;
-
-      await dbClient.query(
-        'UPDATE part_batches SET current_quantity = current_quantity - $1 WHERE id = $2',
-        [take, batch.id]
-      );
-
-      // Запись в order_parts с batch_id
-      await dbClient.query(
-        `INSERT INTO order_parts (order_id, part_id, quantity_used, purchase_price_at_moment, selling_price_at_moment, batch_id)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [id, input.part_id, take, batch.purchase_price, selling_price, batch.id]
-      );
-
-      // Запись в part_movements
-      await dbClient.query(
-        `INSERT INTO part_movements (part_id, type, quantity, order_id, batch_id, batch_number)
-         VALUES ($1, 'outgoing', $2, $3, $4, $5)`,
-        [input.part_id, take, id, batch.id, batch.batch_number]
-      );
-    }
-
-    // Проверяем, что весь объём покрыт партиями
-    if (remaining > 0) {
-      throw new BadRequestError(
-        `Несоответствие остатков: не хватает ${remaining}шт в партиях`
-      );
-    }
-
-    // Уменьшаем общий остаток
-    await dbClient.query(
-      'UPDATE parts SET quantity = quantity - $1 WHERE id = $2',
-      [input.quantity, input.part_id]
-    );
-
-    // Пересчитать стоимость заказа
-    await recalcOrderCost(dbClient, Number(id));
-
-    await dbClient.query('COMMIT');
-    res.json({ message: 'Запчасть списана', part_name: name, quantity: input.quantity });
+    const result = await assignPartToOrder(orderId, part_id, quantity);
+    res.json({ message: 'Запчасть списана', ...result });
   } catch (error) {
-    await dbClient.query('ROLLBACK');
     next(error);
-  } finally {
-    dbClient.release();
   }
 });
 

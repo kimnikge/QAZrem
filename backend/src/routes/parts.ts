@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { pool } from '../db/pool.js';
 import { NotFoundError, BadRequestError } from '../lib/errors.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
+import { parsePagination } from '../middleware/pagination.js';
 
 export const partsRouter = Router();
 
@@ -106,48 +107,48 @@ partsRouter.get('/', async (req, res, next) => {
 });
 
 // GET /parts/movements — история движения склада
-partsRouter.get('/movements', async (req, res, next) => {
+partsRouter.get('/movements', parsePagination(), async (req, res, next) => {
   try {
-    const { part_id, type, limit = '50', offset = '0' } = req.query;
-    const limitNum = Math.min(Math.max(parseInt(limit as string, 10) || 50, 1), 200);
-    const offsetNum = Math.max(parseInt(offset as string, 10) || 0, 0);
+    const { part_id, type } = req.query;
+    const { limit, offset } = req.pagination;
 
-    let sql = `
-      SELECT pm.*, p.name AS part_name, p.sku,
-        s.name AS supplier_name
-      FROM part_movements pm
-      JOIN parts p ON p.id = pm.part_id
-      LEFT JOIN suppliers s ON s.id = pm.supplier_id
-      WHERE 1=1
-    `;
+    const conditions: string[] = [];
     const params: unknown[] = [];
     let idx = 1;
 
     if (part_id) {
-      sql += ` AND pm.part_id = $${idx++}`;
+      conditions.push(`pm.part_id = $${idx++}`);
       params.push(Number(part_id));
     }
     if (type) {
-      sql += ` AND pm.type = $${idx++}`;
+      conditions.push(`pm.type = $${idx++}`);
       params.push(type);
     }
 
-    const countSql = sql.replace(
-      /SELECT[\s\S]*?FROM/,
-      'SELECT COUNT(*)::int AS total FROM'
-    );
+    const whereClause = conditions.length > 0
+      ? `WHERE ${conditions.join(' AND ')}`
+      : 'WHERE 1=1';
+
+    const selectClause = `pm.*, p.name AS part_name, p.sku, s.name AS supplier_name`;
+    const fromClause = `part_movements pm JOIN parts p ON p.id = pm.part_id LEFT JOIN suppliers s ON s.id = pm.supplier_id`;
+
+    // Основной запрос
+    const sql = `SELECT ${selectClause} FROM ${fromClause} ${whereClause}
+      ORDER BY pm.created_at DESC
+      LIMIT $${idx++} OFFSET $${idx++}`;
+
+    const allParams = [...params, limit, offset];
+    const result = await pool.query(sql, allParams);
+
+    // COUNT — отдельный надёжный запрос (без regex!)
+    const countSql = `SELECT COUNT(*)::int AS total FROM ${fromClause} ${whereClause}`;
     const countResult = await pool.query(countSql, params);
 
-    sql += ' ORDER BY pm.created_at DESC';
-    sql += ` LIMIT $${idx++} OFFSET $${idx++}`;
-    params.push(limitNum, offsetNum);
-
-    const result = await pool.query(sql, params);
     res.json({
       movements: result.rows,
       total: countResult.rows[0].total,
-      limit: limitNum,
-      offset: offsetNum
+      limit,
+      offset,
     });
   } catch (error) {
     next(error);

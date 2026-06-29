@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { pool } from '../db/pool.js';
 import { NotFoundError, BadRequestError } from '../lib/errors.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
+import { buildPatchQuery } from '../lib/query-builder.js';
 
 export const suppliersRouter = Router();
 
@@ -67,27 +68,23 @@ suppliersRouter.patch('/:id', requireRole('admin'), async (req, res, next) => {
     const { id } = req.params;
     const input = updateSupplierSchema.parse(req.body);
 
-    const fields: string[] = [];
-    const values: unknown[] = [];
-    let idx = 1;
+    const patch = buildPatchQuery(
+      input,
+      ['name', 'contact_person', 'phone', 'email', 'notes'],
+      'suppliers',
+    );
 
-    for (const [key, value] of Object.entries(input)) {
-      if (value !== undefined) {
-        fields.push(`${key} = $${idx++}`);
-        values.push(value || null);
-      }
-    }
-
-    if (fields.length === 0) {
+    if (!patch) {
       res.json({ message: 'Нет полей для обновления' });
       return;
     }
 
-    values.push(id);
+    // Подставляем ID поставщика
+    patch.values[patch.values.length - 1] = id;
+
     const result = await pool.query(
-      `UPDATE suppliers SET ${fields.join(', ')} WHERE id = $${idx}
-       RETURNING *`,
-      values
+      `${patch.sql} RETURNING *`,
+      patch.values,
     );
 
     if (result.rows.length === 0) throw new NotFoundError('Поставщик');

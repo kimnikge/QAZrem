@@ -35,7 +35,7 @@ export function BoardView({ orders, onOrderUpdated, onCardOpen }: Props) {
     if (order.status_slug === newStatus) return;
 
     // Проверяем допустимость перехода
-    const allowed = STATUS_TRANSITIONS[order.status_slug] || [];
+    const allowed = (STATUS_TRANSITIONS[order.status_slug] || []) as readonly string[];
     if (!allowed.includes(newStatus)) return;
 
     try {

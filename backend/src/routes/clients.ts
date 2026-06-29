@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { pool } from '../db/pool.js';
 import { NotFoundError } from '../lib/errors.js';
+import { buildPatchQuery } from '../lib/query-builder.js';
 
 export const clientsRouter = Router();
 
@@ -59,27 +60,23 @@ clientsRouter.patch('/:id', async (req, res, next) => {
     const { id } = req.params;
     const input = createClientSchema.partial().parse(req.body);
 
-    const fields: string[] = [];
-    const values: unknown[] = [];
-    let idx = 1;
+    const patch = buildPatchQuery(
+      input,
+      ['name', 'phone', 'email', 'address'],
+      'clients',
+    );
 
-    for (const [key, value] of Object.entries(input)) {
-      if (value !== undefined) {
-        fields.push(`${key} = $${idx++}`);
-        values.push(value || null);
-      }
-    }
-
-    if (fields.length === 0) {
+    if (!patch) {
       res.json({ message: 'Нет полей для обновления' });
       return;
     }
 
-    values.push(id);
+    // Подставляем ID клиента
+    patch.values[patch.values.length - 1] = id;
+
     const result = await pool.query(
-      `UPDATE clients SET ${fields.join(', ')} WHERE id = $${idx}
-       RETURNING id, name, phone, email, address, total_spent, created_at`,
-      values
+      `${patch.sql} RETURNING id, name, phone, email, address, total_spent, created_at`,
+      patch.values,
     );
 
     if (result.rows.length === 0) throw new NotFoundError('Клиент');

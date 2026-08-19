@@ -133,7 +133,7 @@ export function DashboardPage() {
     <div className={`ro-dashboard${compact ? ' compact' : ''}`}>
       <OrderSummary orders={orders} currentUserId={user?.id} currentUserRole={user?.role} />
       <div className="ro-stats">{statCards.map(c => (
-        <div key={c.label} className="ro-stat-card" style={{ borderLeftColor: c.color }}>
+        <div key={c.label} className="ro-stat-card" style={{ '--stat-color': c.color } as React.CSSProperties}>
           <span className="ro-stat-value">{c.value}</span><span className="ro-stat-label">{c.label}</span>
         </div>))}</div>
 

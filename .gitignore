@@ -8,3 +8,4 @@ coverage
 postgres-data
 *.tsbuildinfo
 .vercel
+test-results/

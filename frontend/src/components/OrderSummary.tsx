@@ -41,13 +41,17 @@ export function OrderSummary({ orders, currentUserId, currentUserRole }: Props) 
       {cards.map(c => (
         <div key={c.key} style={{
           background: 'var(--card-bg)', borderRadius: 10, padding: '14px 18px',
-          border: '1px solid var(--border)', borderLeft: `4px solid ${c.color}`,
-          cursor: 'pointer', transition: 'box-shadow 0.15s'
-        }}
+          border: '1px solid var(--border)',
+          cursor: 'pointer', transition: 'box-shadow 0.15s',
+          position: 'relative', overflow: 'hidden',
+          '--stat-color': c.color,
+        } as React.CSSProperties}
         onMouseEnter={e => (e.currentTarget.style.boxShadow = '0 2px 12px rgba(0,0,0,0.08)')}
         onMouseLeave={e => (e.currentTarget.style.boxShadow = 'none')}>
-          <div style={{ fontSize: 22, fontWeight: 700, color: c.color, lineHeight: 1.2 }}>{c.value}</div>
-          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{c.label}</div>
+          {/* thin top stripe — signature element */}
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: c.color, borderTopLeftRadius: 10, borderTopRightRadius: 10 }} />
+          <div style={{ fontSize: 22, fontWeight: 700, color: c.color, lineHeight: 1.2, fontFamily: 'var(--font-mono)' }}>{c.value}</div>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.3 }}>{c.label}</div>
         </div>
       ))}
     </div>

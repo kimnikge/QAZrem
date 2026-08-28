@@ -4,6 +4,7 @@ export type Part = {
   id: number; name: string; sku: string; compatible_models: string[];
   purchase_price: string; selling_price: string; quantity: number; min_quantity: number;
   category_id: number | null; category_name: string | null;
+  categories: { id: number; name: string; is_primary: boolean }[];
   model_name: string | null; unit: string; photo_url: string | null; is_active: boolean;
   attributes: Record<string, unknown>;
   tags: { id: number; name: string; color: string }[];
@@ -48,7 +49,8 @@ export function deleteTag(id: number) { return request<{ message: string }>(`/pa
 export type CreatePartInput = {
   name: string; sku?: string; purchase_price: number; selling_price: number;
   quantity?: number; min_quantity?: number; compatible_models?: string[];
-  category_id?: number | null; model_name?: string; attributes?: Record<string, unknown>;
+  category_id?: number | null; category_ids?: number[]; primary_category_id?: number | null;
+  model_name?: string; attributes?: Record<string, unknown>;
   unit?: string; photo_url?: string; tag_ids?: number[];
 };
 
@@ -67,5 +69,17 @@ export function deletePart(id: number) {
 export function receivePart(part_id: number, quantity: number, document?: string, supplier_id?: number, supplier_sku?: string, batch_number?: string) {
   return request<{ message: string }>('/parts/movement', {
     method: 'POST', body: JSON.stringify({ part_id, quantity, document, supplier_id, supplier_sku, batch_number })
+  });
+}
+
+export function correctPart(data: { part_id: number; actual_quantity?: number; delta?: number; document?: string; reason?: string }) {
+  return request<{ message: string; quantity: number; delta: number; batches?: string }>('/parts/correction', {
+    method: 'POST', body: JSON.stringify(data)
+  });
+}
+
+export function transferPart(data: { part_id: number; quantity: number; from_location_id: number; to_location_id: number; document?: string }) {
+  return request<{ message: string; quantity: number; from_location_id: number; to_location_id: number }>('/parts/transfer', {
+    method: 'POST', body: JSON.stringify(data)
   });
 }

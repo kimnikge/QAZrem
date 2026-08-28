@@ -32,7 +32,7 @@ export {
 export {
   type Part, type CreatePartInput, type Tag,
   getParts, writeoffPart, getPartsSummary, getPartMovements,
-  createPart, updatePart, receivePart, deletePart,
+  createPart, updatePart, receivePart, deletePart, correctPart, transferPart,
   getTags, createTag, deleteTag,
 } from './parts';
 

@@ -1,11 +1,38 @@
 import { useEffect, useState } from 'react';
 import { Package, Plus, Save, ArrowDownToLine, Truck, UserPlus, Search as SearchIcon, Edit3, Trash2 } from 'lucide-react';
-import { getParts, createPart, updatePart, receivePart, writeoffPart, deletePart, getTags, type Part, type Tag } from '../api';
+import { getParts, createPart, updatePart, receivePart, writeoffPart, deletePart, correctPart, transferPart, getTags, type Part, type Tag } from '../api';
 import { getSuppliers, createSupplier, updateSupplier, deleteSupplier, type Supplier } from '../api/suppliers';
+import { getLocations, type Location } from '../api/locations';
 import { getCategories, type Category } from '../api/warehouse';
 import { useAuth } from '../context/AuthContext';
 import { CrudModal } from '../components/CrudModal';
 import { TagSelect } from '../components/TagSelect';
+
+function CategoryCheckboxes({ categories, selected, onChange }: {
+  categories: Category[];
+  selected: number[];
+  onChange: (ids: number[]) => void;
+}) {
+  return (
+    <div style={{
+      border: '1px solid var(--border)', borderRadius: 6, padding: 8,
+      maxHeight: 130, overflowY: 'auto',
+      display: 'flex', flexDirection: 'column', gap: 4,
+    }}>
+      {categories.map(c => (
+        <label key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={selected.includes(c.id)}
+            onChange={() => onChange(selected.includes(c.id) ? selected.filter(x => x !== c.id) : [...selected, c.id])}
+          />
+          {c.name}
+        </label>
+      ))}
+      {categories.length === 0 && <span style={{ fontSize: 12, color: '#9ca3af' }}>Нет категорий — создайте их на вкладке «Категории»</span>}
+    </div>
+  );
+}
 
 export function PartsPage() {
   const { user } = useAuth();
@@ -28,7 +55,7 @@ export function PartsPage() {
   const [newSelling, setNewSelling] = useState(0);
   const [newQty, setNewQty] = useState(0);
   const [newMinQty, setNewMinQty] = useState(2);
-  const [newCategoryId, setNewCategoryId] = useState<number | null>(null);
+  const [newCategoryIds, setNewCategoryIds] = useState<number[]>([]);
   const [newModel, setNewModel] = useState('');
   const [newUnit, setNewUnit] = useState('шт');
   const [newPhoto, setNewPhoto] = useState('');
@@ -37,18 +64,28 @@ export function PartsPage() {
 
   // Edit / Receive modal
   const [editPart, setEditPart] = useState<Part | null>(null);
-  const [editData, setEditData] = useState({ name: '', sku: '', purchase_price: 0, selling_price: 0, min_quantity: 2, category_id: null as number | null, model_name: '', unit: 'шт', photo_url: '' });
+  const [editData, setEditData] = useState({ name: '', sku: '', purchase_price: 0, selling_price: 0, min_quantity: 2, category_ids: [] as number[], model_name: '', unit: 'шт', photo_url: '' });
   const [editTags, setEditTags] = useState<Tag[]>([]);
   const [receiveQty, setReceiveQty] = useState(0);
   const [receiveDoc, setReceiveDoc] = useState('');
   const [writeoffQty, setWriteoffQty] = useState(0);
   const [writeoffDoc, setWriteoffDoc] = useState('');
+  const [corrQty, setCorrQty] = useState('');
+  const [corrReason, setCorrReason] = useState('');
+  const [correcting, setCorrecting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [receiving, setReceiving] = useState(false);
 
   // Suppliers
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [receiveSupplierId, setReceiveSupplierId] = useState<number>(0);
+
+  // Locations (перемещение между складами)
+  const [locations, setLocations] = useState<Location[]>([]);
+  const [transferFromId, setTransferFromId] = useState<number>(0);
+  const [transferToId, setTransferToId] = useState<number>(0);
+  const [transferQty, setTransferQty] = useState(0);
+  const [transferring, setTransferring] = useState(false);
   const [receiveSupplierSku, setReceiveSupplierSku] = useState('');
   const [receiveBatchNumber, setReceiveBatchNumber] = useState('');
   const [editSupplierId, setEditSupplierId] = useState<number | null>(null);
@@ -77,6 +114,7 @@ export function PartsPage() {
     load();
     getSuppliers().then(setSuppliers).catch(() => {});
     getCategories().then(setCategories).catch(() => {});
+    getLocations().then(setLocations).catch(() => {});
     getTags().then(setAllTags).catch(() => {});
   }, []);
 
@@ -93,7 +131,8 @@ export function PartsPage() {
         selling_price: Math.round(Number(newSelling)),
         quantity: Math.round(Number(newQty)),
         min_quantity: Math.round(Number(newMinQty)),
-        category_id: newCategoryId,
+        category_ids: newCategoryIds,
+        primary_category_id: newCategoryIds[0] || null,
         model_name: newModel || undefined,
         unit: newUnit,
         photo_url: newPhoto || undefined,
@@ -108,7 +147,7 @@ export function PartsPage() {
 
   function resetCreateForm() {
     setNewName(''); setNewSku(''); setNewPurchase(0); setNewSelling(0);
-    setNewQty(0); setNewMinQty(2); setNewCategoryId(null); setNewModel('');
+    setNewQty(0); setNewMinQty(2); setNewCategoryIds([]); setNewModel('');
     setNewUnit('шт'); setNewPhoto(''); setNewTags([]);
   }
 
@@ -119,7 +158,7 @@ export function PartsPage() {
       purchase_price: Math.round(Number(p.purchase_price)),
       selling_price: Math.round(Number(p.selling_price)),
       min_quantity: p.min_quantity,
-      category_id: p.category_id,
+      category_ids: (p.categories || []).map(c => c.id),
       model_name: p.model_name || '',
       unit: p.unit || 'шт',
       photo_url: p.photo_url || '',
@@ -138,7 +177,8 @@ export function PartsPage() {
         purchase_price: editData.purchase_price,
         selling_price: editData.selling_price,
         min_quantity: editData.min_quantity,
-        category_id: editData.category_id,
+        category_ids: editData.category_ids,
+        primary_category_id: editData.category_ids[0] || null,
         model_name: editData.model_name || undefined,
         unit: editData.unit,
         photo_url: editData.photo_url || undefined,
@@ -191,6 +231,42 @@ export function PartsPage() {
       setParts(data);
     } catch (e) { console.error(e); }
     finally { setReceiving(false); }
+  }
+
+  async function handleCorrect() {
+    if (!editPart || corrQty === '') return;
+    setCorrecting(true);
+    try {
+      const actual = Math.round(Number(corrQty));
+      await correctPart({ part_id: editPart.id, actual_quantity: actual, reason: corrReason || undefined });
+      setCorrQty(''); setCorrReason('');
+      setEditPart(null);
+      await load();
+    } catch (e: any) {
+      alert(e?.message || 'Ошибка корректировки');
+    } finally {
+      setCorrecting(false);
+    }
+  }
+
+  async function handleTransfer() {
+    if (!editPart || !transferQty || !transferFromId || !transferToId) return;
+    setTransferring(true);
+    try {
+      await transferPart({
+        part_id: editPart.id,
+        quantity: Math.round(Number(transferQty)),
+        from_location_id: transferFromId,
+        to_location_id: transferToId,
+      });
+      setTransferQty(0); setTransferFromId(0); setTransferToId(0);
+      setEditPart(null);
+      await load();
+    } catch (e: any) {
+      alert(e?.message || 'Ошибка перемещения');
+    } finally {
+      setTransferring(false);
+    }
   }
 
   async function handleAddSupplierQuick() {
@@ -267,7 +343,11 @@ export function PartsPage() {
               <tr key={p.id} onClick={() => isAdmin && openEdit(p)} style={{ cursor: isAdmin ? 'pointer' : undefined }}>
                 <td>{p.name}</td>
                 <td><code>{p.sku}</code></td>
-                <td style={{ fontSize: 13, color: '#5f6368' }}>{p.category_name || '—'}</td>
+                <td style={{ fontSize: 13, color: '#5f6368' }}>
+                  {(p.categories && p.categories.length > 0)
+                    ? p.categories.map(c => c.name).join(', ')
+                    : (p.category_name || '—')}
+                </td>
                 <td>
                   <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
                     {(p.tags || []).map(tag => (
@@ -347,7 +427,6 @@ export function PartsPage() {
           fields={[
             { label: 'Название', name: 'name', value: newName, onChange: v => setNewName(String(v)), required: true, placeholder: 'Экран iPhone 13' },
             { label: 'Артикул', name: 'sku', value: newSku, onChange: v => setNewSku(String(v)), hint: 'авто' },
-            { label: 'Категория', name: 'category_id', type: 'select', value: newCategoryId || '', onChange: v => setNewCategoryId(Number(v) || null), options: categories.map(c => ({ label: c.name, value: c.id })) },
             { label: 'Модель', name: 'model_name', value: newModel, onChange: v => setNewModel(String(v)), placeholder: 'iPhone 11 ORG' },
             { label: 'Цена закупа', name: 'purchase_price', type: 'number', value: newPurchase || '', onChange: v => setNewPurchase(Number(v)) },
             { label: 'Цена продажи', name: 'selling_price', type: 'number', value: newSelling || '', onChange: v => setNewSelling(Number(v)) },
@@ -357,6 +436,10 @@ export function PartsPage() {
             { label: 'Фото (URL)', name: 'photo_url', value: newPhoto, onChange: v => setNewPhoto(String(v)) },
           ]}
         >
+          <div>
+            <label style={{ fontSize: 13, color: '#5f6368', display: 'block', marginBottom: 4 }}>Категории — можно несколько (первая = основная)</label>
+            <CategoryCheckboxes categories={categories} selected={newCategoryIds} onChange={setNewCategoryIds} />
+          </div>
           <TagSelect selected={newTags} onChange={setNewTags} />
         </CrudModal>
       )}
@@ -392,12 +475,8 @@ export function PartsPage() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 8 }}>
               <div><label style={{ fontSize: 11, color: '#5f6368' }}>Название</label><input value={editData.name} onChange={e => setEditData({ ...editData, name: e.target.value })} style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14 }} /></div>
               <div><label style={{ fontSize: 11, color: '#5f6368' }}>Артикул</label><input value={editData.sku} onChange={e => setEditData({ ...editData, sku: e.target.value })} style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14 }} /></div>
-              <div><label style={{ fontSize: 11, color: '#5f6368' }}>Категория</label>
-                <select value={editData.category_id || ''} onChange={e => setEditData({ ...editData, category_id: Number(e.target.value) || null })}
-                  style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14, background: '#fff' }}>
-                  <option value="">—</option>
-                  {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
+              <div><label style={{ fontSize: 11, color: '#5f6368' }}>Категории — несколько (первая = основная)</label>
+                <CategoryCheckboxes categories={categories} selected={editData.category_ids} onChange={ids => setEditData({ ...editData, category_ids: ids })} />
               </div>
               <div><label style={{ fontSize: 11, color: '#5f6368' }}>Модель</label><input value={editData.model_name} onChange={e => setEditData({ ...editData, model_name: e.target.value })} style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14 }} /></div>
               <div><label style={{ fontSize: 11, color: '#5f6368' }}>Цена закупа</label><input type="number" value={editData.purchase_price || ''} onChange={e => setEditData({ ...editData, purchase_price: Math.round(Number(e.target.value)) })} style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14 }} /></div>
@@ -415,6 +494,58 @@ export function PartsPage() {
               <Save size={16} /> {saving ? 'Сохранение...' : 'Сохранить'}
             </button>
 
+            {/* Корректировка остатка (аудит) */}
+            <h4 style={{ fontSize: 14, marginBottom: 8, color: '#202124' }}>Корректировка остатка (записывается в журнал движений)</h4>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'end', marginBottom: 16 }}>
+              <div>
+                <label style={{ fontSize: 11, color: '#5f6368', display: 'block', marginBottom: 2 }}>Фактический остаток *</label>
+                <input type="number" value={corrQty} onChange={e => setCorrQty(e.target.value)}
+                  placeholder={`сейчас: ${editPart.quantity}`}
+                  style={{ width: 140, padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14 }} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 11, color: '#5f6368', display: 'block', marginBottom: 2 }}>Причина</label>
+                <input value={corrReason} onChange={e => setCorrReason(e.target.value)}
+                  placeholder="Инвентаризация / брак / пересчёт..."
+                  style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14 }} />
+              </div>
+              <button onClick={handleCorrect} disabled={correcting || corrQty === ''}
+                style={{ padding: '8px 14px', fontSize: 13, background: '#f59e0b', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                {correcting ? '...' : 'Скорректировать'}
+              </button>
+            </div>
+
+            {/* Перемещение между локациями */}
+            <h4 style={{ fontSize: 14, marginBottom: 8, color: '#202124' }}>Переместить между локациями</h4>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'end', marginBottom: 16 }}>
+              <div>
+                <label style={{ fontSize: 11, color: '#5f6368', display: 'block', marginBottom: 2 }}>Откуда</label>
+                <select value={transferFromId || ''} onChange={e => setTransferFromId(Number(e.target.value) || 0)}
+                  style={{ width: 170, padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14, background: '#fff' }}>
+                  <option value="">—</option>
+                  {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: 11, color: '#5f6368', display: 'block', marginBottom: 2 }}>Куда</label>
+                <select value={transferToId || ''} onChange={e => setTransferToId(Number(e.target.value) || 0)}
+                  style={{ width: 170, padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14, background: '#fff' }}>
+                  <option value="">—</option>
+                  {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: 11, color: '#5f6368', display: 'block', marginBottom: 2 }}>Количество</label>
+                <input type="number" value={transferQty || ''} onChange={e => setTransferQty(Math.round(Number(e.target.value)))}
+                  placeholder="0" style={{ width: 100, padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14 }} />
+              </div>
+              <button onClick={handleTransfer}
+                disabled={transferring || !transferQty || !transferFromId || !transferToId || transferFromId === transferToId}
+                style={{ padding: '8px 14px', fontSize: 13, background: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                {transferring ? '...' : 'Переместить'}
+              </button>
+            </div>
+
             {/* Оприходование */}
             <h4 style={{ fontSize: 14, marginBottom: 8, color: '#202124' }}>Оприходовать на склад</h4>
 
@@ -425,7 +556,7 @@ export function PartsPage() {
                 <div style={{ display: 'flex', gap: 4 }}>
                   <select value={receiveSupplierId || ''} onChange={e => setReceiveSupplierId(Number(e.target.value) || 0)}
                     style={{ flex: 1, padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14, background: 'var(--card-bg)' }}>
-                    <option value="">— Без поставщика —</option>
+                    <option value="">— Выберите поставщика (обязательно) —</option>
                     {suppliers.map(s => (
                       <option key={s.id} value={s.id}>{s.name}{s.deliveries_count ? ` (${s.deliveries_count})` : ''}</option>
                     ))}
@@ -485,7 +616,7 @@ export function PartsPage() {
                 <label style={{ fontSize: 13, color: '#5f6368', display: 'block', marginBottom: 4 }}>Документ (накладная)</label>
                 <input value={receiveDoc} onChange={e => setReceiveDoc(e.target.value)} placeholder="№123" style={{ width: 160, padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14 }} />
               </div>
-              <button className="btn-primary" onClick={handleReceive} disabled={receiving || !receiveQty} style={{ padding: '8px 14px', fontSize: 13 }}>
+              <button className="btn-primary" onClick={handleReceive} disabled={receiving || !receiveQty || !receiveSupplierId} style={{ padding: '8px 14px', fontSize: 13 }}>
                 <ArrowDownToLine size={14} /> {receiving ? '...' : 'Оприходовать'}
               </button>
             </div>

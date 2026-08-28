@@ -1,7 +1,7 @@
 import { request, buildQuery } from './client';
 
 export type Part = {
-  id: number; name: string; sku: string; compatible_models: string[];
+  id: number; name: string; sku: string;
   purchase_price: string; selling_price: string; quantity: number; min_quantity: number;
   category_id: number | null; category_name: string | null;
   categories: { id: number; name: string; is_primary: boolean }[];
@@ -48,7 +48,7 @@ export function deleteTag(id: number) { return request<{ message: string }>(`/pa
 
 export type CreatePartInput = {
   name: string; sku?: string; purchase_price: number; selling_price: number;
-  quantity?: number; min_quantity?: number; compatible_models?: string[];
+  quantity?: number; min_quantity?: number;
   category_id?: number | null; category_ids?: number[]; primary_category_id?: number | null;
   model_name?: string; attributes?: Record<string, unknown>;
   unit?: string; photo_url?: string; tag_ids?: number[];

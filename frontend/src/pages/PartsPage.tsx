@@ -5,6 +5,7 @@ import { getSuppliers, createSupplier, updateSupplier, deleteSupplier, type Supp
 import { getLocations, type Location } from '../api/locations';
 import { getCategories, type Category } from '../api/warehouse';
 import { useAuth } from '../context/AuthContext';
+import { usePermission } from '../hooks/usePermission';
 import { CrudModal } from '../components/CrudModal';
 import { TagSelect } from '../components/TagSelect';
 
@@ -37,6 +38,7 @@ function CategoryCheckboxes({ categories, selected, onChange }: {
 export function PartsPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
+  const canViewPurchasePrice = usePermission('parts.view_purchase_price');
   const [parts, setParts] = useState<Part[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -332,7 +334,7 @@ export function PartsPage() {
               <th>Артикул</th>
               <th>Категория</th>
               <th>Теги</th>
-              <th>Цена закуп</th>
+              {canViewPurchasePrice && <th>Цена закуп</th>}
               <th>Цена продажи</th>
               <th>Остаток</th>
               <th>Мин.</th>
@@ -355,7 +357,7 @@ export function PartsPage() {
                     ))}
                   </div>
                 </td>
-                <td>{Math.round(Number(p.purchase_price))} ₸</td>
+                {canViewPurchasePrice && <td>{Math.round(Number(p.purchase_price))} ₸</td>}
                 <td>{Math.round(Number(p.selling_price))} ₸</td>
                 <td><strong>{p.quantity}</strong></td>
                 <td>{p.min_quantity}</td>

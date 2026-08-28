@@ -16,6 +16,8 @@ import { PrintOrderPage } from './pages/PrintOrderPage';
 import { FinancePage } from './pages/FinancePage';
 import { WarehouseCategoriesPage } from './pages/WarehouseCategories';
 import { WarehouseInventoryPage } from './pages/WarehouseInventory';
+import { AdminPermissionsPage } from './pages/AdminPermissionsPage';
+import { NotificationsPage } from './pages/NotificationsPage';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, initialized } = useAuth();
@@ -52,6 +54,8 @@ function AppRoutes() {
         <Route path="/reports" element={<ReportsPage />} />
         <Route path="/warehouse/categories" element={<WarehouseCategoriesPage />} />
         <Route path="/warehouse/inventory" element={<WarehouseInventoryPage />} />
+        <Route path="/permissions" element={<AdminRoute><AdminPermissionsPage /></AdminRoute>} />
+        <Route path="/notifications" element={<NotificationsPage />} />
         <Route path="/settings" element={<AdminRoute><SettingsPage /></AdminRoute>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

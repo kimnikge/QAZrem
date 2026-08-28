@@ -4,6 +4,7 @@ import { pool } from '../db/pool.js';
 import { NotFoundError, BadRequestError } from '../lib/errors.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { buildPatchQuery } from '../lib/query-builder.js';
+import { withdrawPartLocations } from '../lib/part-locations.js';
 
 export const suppliersRouter = Router();
 
@@ -147,6 +148,9 @@ suppliersRouter.post('/:id/return', requireRole('admin'), async (req, res, next)
       'UPDATE parts SET quantity = quantity - $1 WHERE id = $2',
       [quantity, part_id]
     );
+
+    // Снимаем остаток по локациям
+    await withdrawPartLocations(dbClient, part_id, quantity);
 
     // Запись в part_movements
     await dbClient.query(

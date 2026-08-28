@@ -8,6 +8,7 @@
 import type { PoolClient } from 'pg';
 import { pool } from '../db/pool.js';
 import { BadRequestError, NotFoundError } from '../lib/errors.js';
+import { withdrawPartLocations } from '../lib/part-locations.js';
 import { STATUS_TRANSITIONS } from '../types/domain.js';
 import { sendTelegramMessage } from './telegram.js';
 
@@ -237,6 +238,15 @@ export async function updateOrderStatus(
     updateParams.push(orderId);
     await dbClient.query(updateSql, updateParams);
 
+    // При отмене заказа — авто-снятие всех активных резервов (Блок 6.1 ТЗ)
+    if (newSlug === 'cancelled') {
+      await dbClient.query(
+        `UPDATE reservations SET status = 'cancelled'
+         WHERE order_id = $1 AND status = 'active'`,
+        [orderId],
+      );
+    }
+
     await dbClient.query(
       `INSERT INTO order_history (order_id, user_id, from_status_id, to_status_id, comment)
        VALUES ($1, $2, $3, $4, $5)`,
@@ -319,6 +329,13 @@ export async function assignPartToOrder(
     }
 
     await dbClient.query('UPDATE parts SET quantity = quantity - $1 WHERE id = $2', [quantity, partId]);
+
+    // Снимаем остаток по локациям
+    await withdrawPartLocations(dbClient, partId, quantity);
+
+    // Перевод активных резервов заказа в 'used'
+    await consumeReservations(dbClient, orderId, partId, quantity);
+
     await recalcOrderCost(dbClient, orderId);
 
     await dbClient.query('COMMIT');
@@ -382,6 +399,59 @@ async function writeoffParts(
     }
 
     await client.query('UPDATE parts SET quantity = quantity - $1 WHERE id = $2', [part.quantity, part.part_id]);
+
+    // Снимаем остаток по локациям
+    await withdrawPartLocations(client, part.part_id, part.quantity);
+
+    // Перевод активных резервов заказа в 'used'
+    await consumeReservations(client, orderId, part.part_id, part.quantity);
+  }
+}
+
+// ─── Жизненный цикл резервов (Блок 6.1 ТЗ) ─────────────
+
+/**
+ * Переводит активные резервы заказа в 'used' при списании запчасти.
+ * Частичное использование: активный резерв уменьшается,
+ * использованная часть фиксируется отдельной записью со статусом 'used'.
+ */
+async function consumeReservations(
+  client: PoolClient,
+  orderId: number,
+  partId: number,
+  quantity: number,
+): Promise<void> {
+  const active = await client.query(
+    `SELECT id, part_id, batch_id, order_id, quantity, reserved_by, expires_at
+     FROM reservations
+     WHERE order_id = $1 AND part_id = $2 AND status = 'active'
+     ORDER BY id
+     FOR UPDATE`,
+    [orderId, partId],
+  );
+
+  let remaining = quantity;
+  for (const res of active.rows) {
+    if (remaining <= 0) break;
+    const take = Math.min(remaining, res.quantity);
+    remaining -= take;
+
+    if (take === res.quantity) {
+      await client.query(
+        `UPDATE reservations SET status = 'used' WHERE id = $1`,
+        [res.id],
+      );
+    } else {
+      await client.query(
+        `UPDATE reservations SET quantity = quantity - $1 WHERE id = $2`,
+        [take, res.id],
+      );
+      await client.query(
+        `INSERT INTO reservations (part_id, batch_id, order_id, quantity, reserved_by, reserved_at, expires_at, status)
+         VALUES ($1, $2, $3, $4, $5, NOW(), $6, 'used')`,
+        [res.part_id, res.batch_id, res.order_id, take, res.reserved_by, res.expires_at],
+      );
+    }
   }
 }
 

@@ -11,6 +11,7 @@ import {
   assignPartToOrder,
   recalcOrderCost,
 } from '../services/order.service.js';
+import { depositPartLocation } from '../lib/part-locations.js';
 import { STATUS_TRANSITIONS } from '../types/domain.js';
 
 export const ordersRouter = Router();
@@ -693,6 +694,9 @@ ordersRouter.delete('/:id/parts/:opId', requireRole('admin'), async (req, res, n
     // Возвращаем на склад
     await dbClient.query('UPDATE parts SET quantity = quantity + $1 WHERE id = $2', [quantity_used, part_id]);
 
+    // Возвращаем остаток на локацию «Общий склад»
+    await depositPartLocation(dbClient, part_id, null, quantity_used);
+
     // Удаляем из order_parts
     await dbClient.query('DELETE FROM order_parts WHERE id = $1', [opId]);
 
@@ -728,6 +732,14 @@ ordersRouter.post('/:id/reserve', requireRole('admin', 'master'), async (req, re
       quantity: z.number().int().positive(),
       batch_id: z.number().int().positive().optional(),
     }).parse(req.body);
+
+    await dbClient.query('BEGIN');
+
+    // Автопротухание истёкших резервов (expires_at < NOW())
+    await dbClient.query(
+      `UPDATE reservations SET status = 'cancelled'
+       WHERE status = 'active' AND expires_at IS NOT NULL AND expires_at < NOW()`
+    );
 
     // Проверяем заказ
     const order = await dbClient.query(
@@ -783,7 +795,8 @@ ordersRouter.get('/:id/reservations', async (req, res, next) => {
     const orderId = parseInt(req.params.id);
     const result = await pool.query(
       `SELECT r.*, p.name AS part_name, p.sku,
-        pb.batch_number, u.name AS reserved_by_name
+        pb.batch_number, u.name AS reserved_by_name,
+        (r.status = 'active' AND r.expires_at IS NOT NULL AND r.expires_at < NOW()) AS is_expired
        FROM reservations r
        JOIN parts p ON p.id = r.part_id
        LEFT JOIN part_batches pb ON pb.id = r.batch_id

@@ -39,7 +39,11 @@ warehouseCategoriesRouter.get('/', async (_req, res, next) => {
   try {
     const result = await pool.query(
       `SELECT id, name, parent_id, created_at,
-        (SELECT COUNT(*) FROM parts WHERE parts.category_id = pc.id)::int AS parts_count
+        (SELECT COUNT(*) FROM (
+          SELECT part_id FROM part_category_links WHERE category_id = pc.id
+          UNION
+          SELECT id FROM parts WHERE category_id = pc.id
+        ) x)::int AS parts_count
        FROM part_categories pc
        ORDER BY COALESCE(parent_id, id), parent_id NULLS FIRST, name`
     );
@@ -76,7 +80,11 @@ warehouseCategoriesRouter.get('/:id', async (req, res, next) => {
     const { id } = req.params;
     const result = await pool.query(
       `SELECT pc.*,
-        (SELECT COUNT(*) FROM parts WHERE category_id = pc.id)::int AS parts_count,
+        (SELECT COUNT(*) FROM (
+          SELECT part_id FROM part_category_links WHERE category_id = pc.id
+          UNION
+          SELECT id FROM parts WHERE category_id = pc.id
+        ) x)::int AS parts_count,
         (SELECT COUNT(*) FROM part_categories WHERE parent_id = pc.id)::int AS children_count
        FROM part_categories pc WHERE pc.id = $1`,
       [id]
@@ -129,9 +137,14 @@ warehouseCategoriesRouter.patch('/:id', requireRole('admin'), async (req, res, n
 warehouseCategoriesRouter.delete('/:id', requireRole('admin'), async (req, res, next) => {
   try {
     const { id } = req.params;
-    // Проверяем, есть ли запчасти в категории
+    // Проверяем, есть ли запчасти в категории (включая M2M-связи)
     const partsCount = await pool.query(
-      'SELECT COUNT(*)::int AS cnt FROM parts WHERE category_id = $1', [id]
+      `SELECT COUNT(*)::int AS cnt FROM (
+        SELECT part_id FROM part_category_links WHERE category_id = $1
+        UNION
+        SELECT id FROM parts WHERE category_id = $1
+      ) x`,
+      [id]
     );
     if (partsCount.rows[0].cnt > 0) {
       throw new BadRequestError(
@@ -144,6 +157,29 @@ warehouseCategoriesRouter.delete('/:id', requireRole('admin'), async (req, res, 
     );
     if (result.rows.length === 0) throw new NotFoundError('Категория');
     res.json({ message: 'Категория удалена' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ============================================================
+// ЗАПЧАСТИ КАТЕГОРИИ (M2M)
+// ============================================================
+
+// GET /warehouse/categories/:id/parts — запчасти категории
+warehouseCategoriesRouter.get('/:id/parts', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const result = await pool.query(
+      `SELECT p.id, p.name, p.sku, p.quantity, p.selling_price, p.model_name, p.unit,
+        pcl.is_primary
+       FROM part_category_links pcl
+       JOIN parts p ON p.id = pcl.part_id
+       WHERE pcl.category_id = $1 AND p.is_active = TRUE
+       ORDER BY pcl.is_primary DESC, p.name`,
+      [id]
+    );
+    res.json(result.rows);
   } catch (error) {
     next(error);
   }

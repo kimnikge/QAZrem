@@ -5,6 +5,7 @@ import { NotFoundError, BadRequestError } from '../lib/errors.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { buildPatchQuery } from '../lib/query-builder.js';
 import { withdrawPartLocations } from '../lib/part-locations.js';
+import { createNotification, checkStockAlerts } from '../services/notifications.service.js';
 
 export const suppliersRouter = Router();
 
@@ -160,6 +161,13 @@ suppliersRouter.post('/:id/return', requireRole('admin'), async (req, res, next)
     );
 
     await dbClient.query('COMMIT');
+
+    // Уведомления: возврат поставщику + остатки (Блок 11 ТЗ)
+    await createNotification('return_supplier', `Возврат поставщику: партия ${batch.rows[0].batch_number}`, {
+      part_id, quantity, batch_id, supplier_id: supplierId,
+    });
+    await checkStockAlerts(part_id);
+
     res.json({
       message: `Возврат поставщику: партия ${batch.rows[0].batch_number}, ${quantity}шт`,
       reason: reason || null

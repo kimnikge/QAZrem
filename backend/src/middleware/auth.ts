@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env.js';
 import { ForbiddenError, UnauthorizedError } from '../lib/errors.js';
+import { hasPermission } from '../lib/permissions.js';
 
 export type JwtPayload = {
   userId: number;
@@ -59,5 +60,28 @@ export function requireRole(...roles: Array<JwtPayload['role']>) {
       return;
     }
     next();
+  };
+}
+
+/**
+ * Проверяет гибкое право (ТЗ Блок 10): admin — всегда, остальные —
+ * через role_permissions и user_permission_overrides.
+ */
+export function requirePermission(permission: string) {
+  return async (req: Request, _res: Response, next: NextFunction) => {
+    if (!req.user) {
+      next(new UnauthorizedError());
+      return;
+    }
+    try {
+      const allowed = await hasPermission(req.user.userId, req.user.role, permission);
+      if (!allowed) {
+        next(new ForbiddenError(`Недостаточно прав: ${permission}`));
+        return;
+      }
+      next();
+    } catch (error) {
+      next(error);
+    }
   };
 }

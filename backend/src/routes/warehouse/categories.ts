@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { pool } from '../../db/pool.js';
 import { NotFoundError, BadRequestError } from '../../lib/errors.js';
-import { requireAuth, requireRole } from '../../middleware/auth.js';
+import { requireAuth, requirePermission } from '../../middleware/auth.js';
 import { buildPatchQuery } from '../../lib/query-builder.js';
 
 export const warehouseCategoriesRouter = Router();
@@ -97,7 +97,7 @@ warehouseCategoriesRouter.get('/:id', async (req, res, next) => {
 });
 
 // POST /warehouse/categories — создать категорию
-warehouseCategoriesRouter.post('/', requireRole('admin'), async (req, res, next) => {
+warehouseCategoriesRouter.post('/', requirePermission('catalog.manage'), async (req, res, next) => {
   try {
     const input = createCategorySchema.parse(req.body);
     const result = await pool.query(
@@ -111,7 +111,7 @@ warehouseCategoriesRouter.post('/', requireRole('admin'), async (req, res, next)
 });
 
 // PATCH /warehouse/categories/:id
-warehouseCategoriesRouter.patch('/:id', requireRole('admin'), async (req, res, next) => {
+warehouseCategoriesRouter.patch('/:id', requirePermission('catalog.manage'), async (req, res, next) => {
   try {
     const { id } = req.params;
     const input = updateCategorySchema.parse(req.body);
@@ -134,7 +134,7 @@ warehouseCategoriesRouter.patch('/:id', requireRole('admin'), async (req, res, n
 });
 
 // DELETE /warehouse/categories/:id
-warehouseCategoriesRouter.delete('/:id', requireRole('admin'), async (req, res, next) => {
+warehouseCategoriesRouter.delete('/:id', requirePermission('catalog.manage'), async (req, res, next) => {
   try {
     const { id } = req.params;
     // Проверяем, есть ли запчасти в категории (включая M2M-связи)
@@ -204,7 +204,7 @@ warehouseCategoriesRouter.get('/:id/attributes', async (req, res, next) => {
 });
 
 // POST /warehouse/categories/:id/attributes — добавить атрибут
-warehouseCategoriesRouter.post('/:id/attributes', requireRole('admin'), async (req, res, next) => {
+warehouseCategoriesRouter.post('/:id/attributes', requirePermission('catalog.manage'), async (req, res, next) => {
   try {
     const categoryId = parseInt(req.params.id, 10);
     const input = createAttributeSchema.parse(req.body);
@@ -227,7 +227,7 @@ warehouseCategoriesRouter.post('/:id/attributes', requireRole('admin'), async (r
 });
 
 // PATCH /warehouse/categories/attributes/:attrId
-warehouseCategoriesRouter.patch('/attributes/:attrId', requireRole('admin'), async (req, res, next) => {
+warehouseCategoriesRouter.patch('/attributes/:attrId', requirePermission('catalog.manage'), async (req, res, next) => {
   try {
     const { attrId } = req.params;
     const input = updateAttributeSchema.parse(req.body);
@@ -266,7 +266,7 @@ warehouseCategoriesRouter.patch('/attributes/:attrId', requireRole('admin'), asy
 });
 
 // DELETE /warehouse/categories/attributes/:attrId
-warehouseCategoriesRouter.delete('/attributes/:attrId', requireRole('admin'), async (req, res, next) => {
+warehouseCategoriesRouter.delete('/attributes/:attrId', requirePermission('catalog.manage'), async (req, res, next) => {
   try {
     const { attrId } = req.params;
     const result = await pool.query(

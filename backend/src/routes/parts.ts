@@ -8,8 +8,10 @@ import {
   getPartLocationBalance,
 } from '../lib/part-locations.js';
 import { NotFoundError, BadRequestError } from '../lib/errors.js';
-import { requireAuth, requireRole } from '../middleware/auth.js';
+import { requireAuth, requireRole, requirePermission } from '../middleware/auth.js';
 import { parsePagination } from '../middleware/pagination.js';
+import { hasPermission } from '../lib/permissions.js';
+import { createNotification, checkStockAlerts } from '../services/notifications.service.js';
 
 export const partsRouter = Router();
 
@@ -35,7 +37,6 @@ const createPartSchema = z.object({
   category_ids: z.array(z.number().int().positive()).optional(),
   primary_category_id: z.number().int().positive().optional().nullable(),
   model_name: z.string().optional().or(z.literal('')),
-  compatible_models: z.array(z.string()).default([]),
   purchase_price: z.number().nonnegative().default(0),
   selling_price: z.number().nonnegative().default(0),
   quantity: z.number().int().nonnegative().default(0),
@@ -217,6 +218,20 @@ async function withdrawFromBatches(
   return used;
 }
 
+// Скрывает закупочные цены для пользователей без права parts.view_purchase_price
+async function hidePurchasePrice(
+  user: { userId: number; role: string } | undefined,
+  rows: any[],
+): Promise<any[]> {
+  if (!user || user.role === 'admin') return rows;
+  const allowed = await hasPermission(user.userId, user.role, 'parts.view_purchase_price');
+  if (allowed) return rows;
+  for (const row of rows) {
+    if ('purchase_price' in row) row.purchase_price = null;
+  }
+  return rows;
+}
+
 // GET /parts — список запчастей (с фильтрами: category, tag, search, low_stock)
 partsRouter.get('/', async (req, res, next) => {
   try {
@@ -273,7 +288,8 @@ partsRouter.get('/', async (req, res, next) => {
 
     sql += ' ORDER BY p.name';
     const result = await pool.query(sql, params);
-    res.json(result.rows);
+    const rows = await hidePurchasePrice(req.user, result.rows);
+    res.json(rows);
   } catch (error) {
     next(error);
   }
@@ -416,7 +432,8 @@ partsRouter.get('/:id', async (req, res, next) => {
       [id]
     );
     if (result.rows.length === 0) throw new NotFoundError('Запчасть');
-    res.json(result.rows[0]);
+    const rows = await hidePurchasePrice(req.user, result.rows);
+    res.json(rows[0]);
   } catch (error) {
     next(error);
   }
@@ -471,16 +488,15 @@ partsRouter.post('/', requireRole('admin'), async (req, res, next) => {
     await dbClient.query('BEGIN');
 
     const result = await dbClient.query(
-      `INSERT INTO parts (name, sku, category_id, model_name, compatible_models,
+      `INSERT INTO parts (name, sku, category_id, model_name,
           purchase_price, selling_price, quantity, min_quantity, attributes, unit, photo_url)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        RETURNING *`,
       [
         input.name,
         sku,
         primaryCategoryId,
         input.model_name || null,
-        JSON.stringify(input.compatible_models),
         input.purchase_price,
         input.selling_price,
         input.quantity,
@@ -565,7 +581,7 @@ partsRouter.patch('/:id', requireRole('admin'), async (req, res, next) => {
 
     for (const [key, value] of Object.entries(partFields)) {
       if (value !== undefined) {
-        if (key === 'compatible_models' || key === 'attributes') {
+        if (key === 'attributes') {
           fields.push(`${key} = $${idx++}`);
           values.push(JSON.stringify(value));
         } else {
@@ -631,7 +647,7 @@ partsRouter.patch('/:id', requireRole('admin'), async (req, res, next) => {
 });
 
 // POST /parts/movement — оприходование запчасти (с партией)
-partsRouter.post('/movement', requireRole('admin'), async (req, res, next) => {
+partsRouter.post('/movement', requirePermission('parts.receive'), async (req, res, next) => {
   const dbClient = await pool.connect();
   try {
     const input = movementSchema.parse(req.body);
@@ -700,6 +716,14 @@ partsRouter.post('/movement', requireRole('admin'), async (req, res, next) => {
 
     await dbClient.query('COMMIT');
 
+    // Уведомление: поступление партии (Блок 11 ТЗ)
+    await createNotification('incoming', `Поступление партии: ${part.rows[0].name}`, {
+      part_id: input.part_id,
+      part_name: part.rows[0].name,
+      quantity: input.quantity,
+      batch_number: batchNumber,
+    });
+
     res.status(201).json({
       message: `Запчасть "${part.rows[0].name}" оприходована`,
       quantity: input.quantity,
@@ -715,7 +739,7 @@ partsRouter.post('/movement', requireRole('admin'), async (req, res, next) => {
 });
 
 // POST /parts/writeoff — списание запчасти (FIFO, без привязки к заказу)
-partsRouter.post('/writeoff', requireRole('admin'), async (req, res, next) => {
+partsRouter.post('/writeoff', requirePermission('parts.writeoff'), async (req, res, next) => {
   const dbClient = await pool.connect();
   try {
     const input = movementSchema.parse(req.body);
@@ -790,6 +814,9 @@ partsRouter.post('/writeoff', requireRole('admin'), async (req, res, next) => {
     }
 
     await dbClient.query('COMMIT');
+
+    // Уведомления об остатках после списания (Блок 11 ТЗ)
+    await checkStockAlerts(input.part_id);
 
     const batchInfo = usedBatches.map(b =>
       `партия ${b.batchNumber}: ${b.qty}шт × ${b.price}₸`
@@ -931,6 +958,9 @@ partsRouter.post('/correction', requireRole('admin'), async (req, res, next) => 
       [target, input.part_id]
     );
     await dbClient.query('COMMIT');
+
+    // Уведомления об остатках после корректировки (Блок 11 ТЗ)
+    await checkStockAlerts(input.part_id);
 
     res.json({
       message: `Остаток "${part.rows[0].name}" скорректирован: ${current} → ${target} (${delta > 0 ? '+' : ''}${delta}шт)`,

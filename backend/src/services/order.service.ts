@@ -11,6 +11,7 @@ import { BadRequestError, NotFoundError } from '../lib/errors.js';
 import { withdrawPartLocations } from '../lib/part-locations.js';
 import { STATUS_TRANSITIONS } from '../types/domain.js';
 import { sendTelegramMessage } from './telegram.js';
+import { createNotification, checkStockAlerts } from './notifications.service.js';
 
 // ─── Константы ──────────────────────────────────────────
 
@@ -166,6 +167,11 @@ export async function createOrder(
       console.error('Telegram notification failed:', err instanceof Error ? err.message : err),
     );
 
+    // Уведомления склада: проверка остатков после списания (Блок 11 ТЗ)
+    for (const p of parts) {
+      await checkStockAlerts(p.part_id);
+    }
+
     return orderId;
   } catch (error) {
     await dbClient.query('ROLLBACK');
@@ -239,12 +245,15 @@ export async function updateOrderStatus(
     await dbClient.query(updateSql, updateParams);
 
     // При отмене заказа — авто-снятие всех активных резервов (Блок 6.1 ТЗ)
+    let cancelledReservations = 0;
     if (newSlug === 'cancelled') {
-      await dbClient.query(
+      const cancelled = await dbClient.query(
         `UPDATE reservations SET status = 'cancelled'
-         WHERE order_id = $1 AND status = 'active'`,
+         WHERE order_id = $1 AND status = 'active'
+         RETURNING id`,
         [orderId],
       );
+      cancelledReservations = cancelled.rows.length;
     }
 
     await dbClient.query(
@@ -258,6 +267,14 @@ export async function updateOrderStatus(
     notifyStatusChange(orderId, newSlug).catch((err) =>
       console.error('Telegram status notification failed:', err instanceof Error ? err.message : err),
     );
+
+    // Уведомление: снятие с резерва при отмене заказа (Блок 11 ТЗ)
+    if (newSlug === 'cancelled' && cancelledReservations > 0) {
+      await createNotification('reservation_cancelled', `Заказ #${orderId} отменён — снято резервов: ${cancelledReservations}`, {
+        order_id: orderId,
+        count: cancelledReservations,
+      });
+    }
   } catch (error) {
     await dbClient.query('ROLLBACK');
     throw error;

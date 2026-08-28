@@ -142,7 +142,6 @@ export interface PartBase {
   id: number;
   name: string;
   sku: string;
-  compatible_models: string[];
   purchase_price: number;
   selling_price: number;
   quantity: number;

@@ -2,7 +2,8 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { pool } from '../../db/pool.js';
 import { NotFoundError, BadRequestError } from '../../lib/errors.js';
-import { requireAuth, requireRole } from '../../middleware/auth.js';
+import { requireAuth, requirePermission } from '../../middleware/auth.js';
+import { createNotification } from '../../services/notifications.service.js';
 import { buildPatchQuery } from '../../lib/query-builder.js';
 
 export const warehouseInventoryRouter = Router();
@@ -60,7 +61,7 @@ warehouseInventoryRouter.get('/', async (req, res, next) => {
 });
 
 // POST /warehouse/inventory — создать ведомость
-warehouseInventoryRouter.post('/', requireRole('admin'), async (req, res, next) => {
+warehouseInventoryRouter.post('/', requirePermission('inventory.manage'), async (req, res, next) => {
   const dbClient = await pool.connect();
   try {
     const input = createSheetSchema.parse(req.body);
@@ -125,7 +126,7 @@ warehouseInventoryRouter.get('/equipment', async (req, res, next) => {
 });
 
 // POST /warehouse/inventory/equipment — добавить оборудование
-warehouseInventoryRouter.post('/equipment', requireRole('admin'), async (req, res, next) => {
+warehouseInventoryRouter.post('/equipment', requirePermission('inventory.manage'), async (req, res, next) => {
   try {
     const input = createEquipmentSchema.parse(req.body);
     const result = await pool.query(
@@ -140,7 +141,7 @@ warehouseInventoryRouter.post('/equipment', requireRole('admin'), async (req, re
 });
 
 // PATCH /warehouse/inventory/equipment/:id
-warehouseInventoryRouter.patch('/equipment/:id', requireRole('admin'), async (req, res, next) => {
+warehouseInventoryRouter.patch('/equipment/:id', requirePermission('inventory.manage'), async (req, res, next) => {
   try {
     const { id } = req.params;
     const input = createEquipmentSchema.partial().parse(req.body);
@@ -167,7 +168,7 @@ warehouseInventoryRouter.patch('/equipment/:id', requireRole('admin'), async (re
 });
 
 // DELETE /warehouse/inventory/equipment/:id
-warehouseInventoryRouter.delete('/equipment/:id', requireRole('admin'), async (req, res, next) => {
+warehouseInventoryRouter.delete('/equipment/:id', requirePermission('inventory.manage'), async (req, res, next) => {
   try {
     const { id } = req.params;
     const result = await pool.query(
@@ -212,7 +213,7 @@ warehouseInventoryRouter.get('/:id', async (req, res, next) => {
 });
 
 // PATCH /warehouse/inventory/:id/status — сменить статус
-warehouseInventoryRouter.patch('/:id/status', requireRole('admin'), async (req, res, next) => {
+warehouseInventoryRouter.patch('/:id/status', requirePermission('inventory.manage'), async (req, res, next) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
@@ -226,6 +227,26 @@ warehouseInventoryRouter.patch('/:id/status', requireRole('admin'), async (req, 
       [status, id]
     );
     if (result.rows.length === 0) throw new NotFoundError('Ведомость');
+
+    // Уведомление о расхождениях при завершении инвентаризации (Блок 11 ТЗ)
+    if (status === 'completed') {
+      const disc = await pool.query(
+        `SELECT COUNT(*)::int AS cnt, COALESCE(SUM(ii.actual_quantity - ii.expected_quantity), 0)::int AS net
+         FROM inventory_items ii
+         WHERE ii.sheet_id = $1
+           AND ii.actual_quantity IS NOT NULL
+           AND ii.actual_quantity <> ii.expected_quantity`,
+        [id],
+      );
+      if (disc.rows[0].cnt > 0) {
+        await createNotification('inventory', `Инвентаризация #${id} завершена: расхождений ${disc.rows[0].cnt}`, {
+          sheet_id: Number(id),
+          discrepancies: disc.rows[0].cnt,
+          net: disc.rows[0].net,
+        });
+      }
+    }
+
     res.json(result.rows[0]);
   } catch (error) {
     next(error);
@@ -233,7 +254,7 @@ warehouseInventoryRouter.patch('/:id/status', requireRole('admin'), async (req, 
 });
 
 // PATCH /warehouse/inventory/items/:itemId — обновить строку
-warehouseInventoryRouter.patch('/items/:itemId', requireRole('admin'), async (req, res, next) => {
+warehouseInventoryRouter.patch('/items/:itemId', requirePermission('inventory.manage'), async (req, res, next) => {
   try {
     const { itemId } = req.params;
     const input = updateItemSchema.parse(req.body);

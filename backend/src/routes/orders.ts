@@ -13,6 +13,7 @@ import {
 } from '../services/order.service.js';
 import { depositPartLocation } from '../lib/part-locations.js';
 import { STATUS_TRANSITIONS } from '../types/domain.js';
+import { createNotification, checkStockAlerts } from '../services/notifications.service.js';
 
 export const ordersRouter = Router();
 
@@ -656,6 +657,10 @@ ordersRouter.post('/:id/parts', requireRole('admin', 'master'), async (req, res,
     const { part_id, quantity } = assignPartsSchema.parse(req.body);
 
     const result = await assignPartToOrder(orderId, part_id, quantity);
+
+    // Уведомления об остатках после списания (Блок 11 ТЗ)
+    await checkStockAlerts(part_id);
+
     res.json({ message: 'Запчасть списана', ...result });
   } catch (error) {
     next(error);
@@ -711,6 +716,12 @@ ordersRouter.delete('/:id/parts/:opId', requireRole('admin'), async (req, res, n
     await recalcOrderCost(dbClient, orderId);
 
     await dbClient.query('COMMIT');
+
+    // Уведомление: возврат с заказа (Блок 11 ТЗ)
+    await createNotification('return_order', `Возврат с заказа: ${name}`, {
+      part_id, part_name: name, quantity: quantity_used, order_id: orderId,
+    });
+
     res.json({ message: `Запчасть "${name}" возвращена на склад`, quantity: quantity_used });
   } catch (error) {
     await dbClient.query('ROLLBACK');

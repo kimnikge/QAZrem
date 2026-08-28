@@ -31,6 +31,8 @@ import { reportsRouter } from './routes/reports.js';
 import { warehouseCategoriesRouter } from './routes/warehouse/categories.js';
 import { warehouseInventoryRouter } from './routes/warehouse/inventory.js';
 import { warehouseReportsRouter } from './routes/warehouse/reports.js';
+import { permissionsRouter } from './routes/permissions.js';
+import { notificationsRouter } from './routes/notifications.js';
 import { requireAuth } from './middleware/auth.js';
 
 export const app = express();
@@ -106,6 +108,8 @@ app.use('/warehouse/inventory', requireAuth, warehouseInventoryRouter);
 app.use('/warehouse/reports', requireAuth, warehouseReportsRouter);
 app.use('/transfers', requireAuth, transfersRouter);
 app.use('/reports', requireAuth, reportsRouter);
+app.use('/permissions', requireAuth, permissionsRouter);
+app.use('/notifications', requireAuth, notificationsRouter);
 
 // Централизованная обработка ошибок
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

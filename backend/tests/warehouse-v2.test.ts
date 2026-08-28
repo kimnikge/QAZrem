@@ -167,14 +167,22 @@ describe('FIFO: партии и списание', () => {
   });
 
   it('списание (writeoff) списывает из старейшей партии (FIFO)', async () => {
-    const res = await request(app)
+    // Старейшая партия — начальный остаток при создании запчасти (CORR-*)
+    const res1 = await request(app)
       .post('/parts/writeoff')
       .set(auth())
-      .send({ part_id: testPartId, quantity: 2, document: 'FIFO-тест' });
-    expect(res.status).toBe(200);
-    expect(res.body).toHaveProperty('batches');
-    expect(typeof res.body.batches).toBe('string');
-    expect(res.body.batches).toContain('BATCH-TEST-001'); // старейшая партия
+      .send({ part_id: testPartId, quantity: 2, document: 'FIFO-тест-1' });
+    expect(res1.status).toBe(200);
+    expect(typeof res1.body.batches).toBe('string');
+    expect(res1.body.batches).toContain('CORR-'); // партия начального остатка
+
+    // Исчерпав начальную партию, списание продолжается из BATCH-TEST-001
+    const res2 = await request(app)
+      .post('/parts/writeoff')
+      .set(auth())
+      .send({ part_id: testPartId, quantity: 20, document: 'FIFO-тест-2' });
+    expect(res2.status).toBe(200);
+    expect(res2.body.batches).toContain('BATCH-TEST-001');
   });
 
   it('writeoff НЕ даёт списать больше чем есть', async () => {

@@ -496,6 +496,18 @@ partsRouter.post('/', requireRole('admin'), async (req, res, next) => {
     // Связи с категориями (M2M)
     await syncCategoryLinks(dbClient, part.id, categoryIds, primaryCategoryId, input.category_id);
 
+    // Начальный остаток при создании: партия (для FIFO) + остаток по локации + движение
+    // Иначе инвариант SUM(part_locations) = parts.quantity ломается, и списание падает
+    if (input.quantity > 0) {
+      const deposit = await depositToBatch(dbClient, part.id, input.quantity, input.purchase_price);
+      await depositPartLocation(dbClient, part.id, null, input.quantity);
+      await dbClient.query(
+        `INSERT INTO part_movements (part_id, type, quantity, document, batch_id, batch_number)
+         VALUES ($1, 'correction', $2, 'Начальный остаток при создании запчасти', $3, $4)`,
+        [part.id, input.quantity, deposit.batchId, deposit.batchNumber]
+      );
+    }
+
     // Привязываем теги
     if (input.tag_ids && input.tag_ids.length > 0) {
       for (const tagId of input.tag_ids) {

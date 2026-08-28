@@ -727,10 +727,11 @@ ordersRouter.post('/:id/reserve', requireRole('admin', 'master'), async (req, re
   const dbClient = await pool.connect();
   try {
     const orderId = parseInt(req.params.id);
-    const { part_id, quantity, batch_id } = z.object({
+    const { part_id, quantity, batch_id, expires_at } = z.object({
       part_id: z.number().int().positive(),
       quantity: z.number().int().positive(),
       batch_id: z.number().int().positive().optional(),
+      expires_at: z.string().datetime({ offset: true }).optional(),
     }).parse(req.body);
 
     await dbClient.query('BEGIN');
@@ -772,9 +773,9 @@ ordersRouter.post('/:id/reserve', requireRole('admin', 'master'), async (req, re
     }
 
     const result = await dbClient.query(
-      `INSERT INTO reservations (part_id, batch_id, order_id, quantity, reserved_by, status)
-       VALUES ($1, $2, $3, $4, $5, 'active') RETURNING *`,
-      [part_id, batch_id || null, orderId, quantity, req.user!.userId]
+      `INSERT INTO reservations (part_id, batch_id, order_id, quantity, reserved_by, expires_at, status)
+       VALUES ($1, $2, $3, $4, $5, COALESCE($6::timestamptz, NOW() + INTERVAL '7 days'), 'active') RETURNING *`,
+      [part_id, batch_id || null, orderId, quantity, req.user!.userId, expires_at ?? null]
     );
 
     await dbClient.query('COMMIT');

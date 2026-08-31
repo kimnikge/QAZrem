@@ -162,18 +162,30 @@ describe('Полный сценарий: заказ → кассы → закр�
   // ─────────────────────────────────────────────────────
   describe('Этап 3: Запчасти, услуги и пересчёт стоимости', () => {
     it('получает список запчастей и услуг', async () => {
-      const parts = await request(app).get('/parts').set(auth(adminToken)).expect(200);
       const services = await request(app).get('/services').set(auth(adminToken)).expect(200);
 
-      expect(parts.body.length).toBeGreaterThan(0);
       expect(services.body.length).toBeGreaterThan(0);
-
-      // Берём первую запчасть с ненулевым остатком
-      const p = parts.body.find((x: any) => x.quantity > 0);
-      if (p) partId = p.id;
 
       // Берём первую услугу
       if (services.body.length > 0) serviceId = services.body[0].id;
+
+      // Своя запчасть-фикстура с гарантированным остатком и партией —
+      // не полагаемся на состояние общей БД (тест был флаки: выбор
+      // «первой запчасти с остатком» зависел от данных других прогонов).
+      const suppliers = await request(app).get('/suppliers').set(auth(adminToken)).expect(200);
+      const partRes = await request(app)
+        .post('/parts')
+        .set(auth(adminToken))
+        .send({ name: `TEST-cash-flow-${Date.now()}`, purchase_price: 1000, selling_price: 5000 })
+        .expect(201);
+      partId = partRes.body.id;
+      if (suppliers.body.length > 0) {
+        await request(app)
+          .post('/parts/movement')
+          .set(auth(adminToken))
+          .send({ part_id: partId, quantity: 5, supplier_id: suppliers.body[0].id, batch_number: `CASHFLOW-${Date.now()}` })
+          .expect(201);
+      }
     });
 
     it('добавляет запчасть к заказу и пересчитывает стоимость', async () => {

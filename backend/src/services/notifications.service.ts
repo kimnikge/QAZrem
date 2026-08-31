@@ -99,29 +99,46 @@ export async function checkStockAlerts(partId: number): Promise<void> {
 
 /** Генерация уведомлений о залежавшихся запчастях (без движений за N дней). Возвращает число созданных. */
 export async function runStaleCheck(days = 30): Promise<number> {
+  // Один SQL: детекция + дедупликация непрочитанных — без N+1 запросов к БД
   const result = await pool.query(
-    `SELECT p.id, p.name
+    `INSERT INTO notifications (type_code, title, payload)
+     SELECT 'stale', 'Залежалась без движения: ' || p.name,
+            jsonb_build_object('part_id', p.id, 'part_name', p.name, 'days', $1::int)
      FROM parts p
      WHERE p.is_active = TRUE
        AND NOT EXISTS (
          SELECT 1 FROM part_movements pm
          WHERE pm.part_id = p.id AND pm.created_at > NOW() - ($1 * INTERVAL '1 day')
-       )`,
+       )
+       AND NOT EXISTS (
+         SELECT 1 FROM notifications n
+         WHERE n.type_code = 'stale' AND n.read_at IS NULL
+           AND n.payload->>'part_id' = p.id::text
+       )
+     RETURNING id`,
     [days],
   );
 
-  let created = 0;
-  for (const p of result.rows) {
-    const dup = await pool.query(
-      `SELECT 1 FROM notifications
-       WHERE type_code = 'stale' AND read_at IS NULL AND payload->>'part_id' = $1`,
-      [String(p.id)],
+  // Доставка подписчикам (обычно настроек нет — один запрос)
+  try {
+    const settings = await pool.query(
+      `SELECT user_id, channel FROM notification_settings
+       WHERE type_code = 'stale' AND enabled = TRUE`,
     );
-    if (dup.rows.length > 0) continue;
-    await createNotification('stale', `Залежалась без движения: ${p.name}`, {
-      part_id: p.id, part_name: p.name, days,
-    });
-    created++;
+    for (const s of settings.rows) {
+      if (s.channel === 'telegram') {
+        try {
+          await sendTelegramMessage(`<b>Залежавшиеся запчасти</b>\nСоздано уведомлений: ${result.rowCount}`);
+        } catch (error) {
+          console.error('[notifications] telegram:', error instanceof Error ? error.message : error);
+        }
+      } else if (s.channel === 'whatsapp') {
+        console.log('[notifications] whatsapp (не настроен): stale-check');
+      }
+    }
+  } catch (error) {
+    console.error('[notifications] stale delivery failed:', error instanceof Error ? error.message : error);
   }
-  return created;
+
+  return result.rowCount ?? 0;
 }

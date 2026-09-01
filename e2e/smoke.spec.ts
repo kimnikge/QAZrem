@@ -6,9 +6,16 @@
  */
 
 import { test, expect } from '@playwright/test';
+import { config } from 'dotenv';
 
-const ADMIN_LOGIN = process.env.ADMIN_LOGIN || 'MISTIK-XXX';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Detka0300304345';
+// Загружаем корневой .env (Playwright сам env-файлы не читает)
+config({ path: process.cwd() + '/.env' });
+
+const ADMIN_LOGIN = process.env.ADMIN_LOGIN;
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+if (!ADMIN_LOGIN || !ADMIN_PASSWORD) {
+  throw new Error('ADMIN_LOGIN и ADMIN_PASSWORD обязательны для E2E — задайте их в .env');
+}
 
 test.describe('Авторизация и навигация', () => {
 

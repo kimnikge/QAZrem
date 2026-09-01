@@ -15,8 +15,11 @@ import { closePool } from '../src/db/pool.js';
 // Константы
 // ═══════════════════════════════════════════════════════════
 
-const ADMIN_LOGIN = process.env.ADMIN_LOGIN || 'MISTIK-XXX';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Detka0300304345';
+const ADMIN_LOGIN = process.env.ADMIN_LOGIN;
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+if (!ADMIN_LOGIN || !ADMIN_PASSWORD) {
+  throw new Error('ADMIN_LOGIN и ADMIN_PASSWORD обязательны для тестов — задайте их в .env');
+}
 
 let adminToken = '';
 let receptionToken = '';

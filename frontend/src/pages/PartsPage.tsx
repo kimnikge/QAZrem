@@ -39,6 +39,8 @@ export function PartsPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
   const canViewPurchasePrice = usePermission('parts.view_purchase_price');
+  const canReceive = usePermission('parts.receive');
+  const canWriteoff = usePermission('parts.writeoff');
   const [parts, setParts] = useState<Part[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -342,7 +344,8 @@ export function PartsPage() {
           </thead>
           <tbody>
             {parts.map(p => (
-              <tr key={p.id} onClick={() => isAdmin && openEdit(p)} style={{ cursor: isAdmin ? 'pointer' : undefined }}>
+              <tr key={p.id} onClick={() => (isAdmin || canReceive || canWriteoff) && openEdit(p)}
+                style={{ cursor: (isAdmin || canReceive || canWriteoff) ? 'pointer' : undefined }}>
                 <td>{p.name}</td>
                 <td><code>{p.sku}</code></td>
                 <td style={{ fontSize: 13, color: '#5f6368' }}>
@@ -460,10 +463,12 @@ export function PartsPage() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <h3 style={{ margin: 0 }}>{editPart.name}</h3>
               <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={() => handleDeletePart(editPart.id, editPart.name)}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: 13 }} title="Удалить запчасть">
-                  <Trash2 size={16} />
-                </button>
+                {isAdmin && (
+                  <button onClick={() => handleDeletePart(editPart.id, editPart.name)}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: 13 }} title="Удалить запчасть">
+                    <Trash2 size={16} />
+                  </button>
+                )}
                 <button onClick={() => setEditPart(null)} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: '#5f6368' }}>×</button>
               </div>
             </div>
@@ -472,7 +477,9 @@ export function PartsPage() {
               Артикул: <code>{editPart.sku}</code> · Остаток: <strong>{editPart.quantity}</strong>
             </p>
 
-            {/* Редактирование */}
+            {/* Редактирование (только админ: PATCH /parts/:id) */}
+            {isAdmin && (
+            <>
             <h4 style={{ fontSize: 14, marginBottom: 8 }}>Редактировать</h4>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 8 }}>
               <div><label style={{ fontSize: 11, color: '#5f6368' }}>Название</label><input value={editData.name} onChange={e => setEditData({ ...editData, name: e.target.value })} style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14 }} /></div>
@@ -495,8 +502,12 @@ export function PartsPage() {
             <button className="btn-primary" onClick={handleSaveEdit} disabled={saving} style={{ marginBottom: 20, marginTop: 12 }}>
               <Save size={16} /> {saving ? 'Сохранение...' : 'Сохранить'}
             </button>
+            </>
+            )}
 
-            {/* Корректировка остатка (аудит) */}
+            {/* Корректировка остатка (аудит, только админ: POST /parts/correction) */}
+            {isAdmin && (
+            <>
             <h4 style={{ fontSize: 14, marginBottom: 8, color: '#202124' }}>Корректировка остатка (записывается в журнал движений)</h4>
             <div style={{ display: 'flex', gap: 8, alignItems: 'end', marginBottom: 16 }}>
               <div>
@@ -516,8 +527,12 @@ export function PartsPage() {
                 {correcting ? '...' : 'Скорректировать'}
               </button>
             </div>
+            </>
+            )}
 
-            {/* Перемещение между локациями */}
+            {/* Перемещение между локациями (только админ: POST /parts/transfer) */}
+            {isAdmin && (
+            <>
             <h4 style={{ fontSize: 14, marginBottom: 8, color: '#202124' }}>Переместить между локациями</h4>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'end', marginBottom: 16 }}>
               <div>
@@ -547,8 +562,12 @@ export function PartsPage() {
                 {transferring ? '...' : 'Переместить'}
               </button>
             </div>
+            </>
+            )}
 
-            {/* Оприходование */}
+            {/* Оприходование (право parts.receive) */}
+            {(isAdmin || canReceive) && (
+            <>
             <h4 style={{ fontSize: 14, marginBottom: 8, color: '#202124' }}>Оприходовать на склад</h4>
 
             {/* Поставщик */}
@@ -563,17 +582,19 @@ export function PartsPage() {
                       <option key={s.id} value={s.id}>{s.name}{s.deliveries_count ? ` (${s.deliveries_count})` : ''}</option>
                     ))}
                   </select>
-                  <button onClick={() => setShowAddSupplier(!showAddSupplier)}
-                    style={{ padding: '8px 10px', background: 'none', border: '1px dashed var(--primary)', borderRadius: 6, cursor: 'pointer', color: 'var(--primary)', fontSize: 18, lineHeight: 1, whiteSpace: 'nowrap' }}
-                    title="Добавить поставщика">
-                    <UserPlus size={16} />
-                  </button>
+                  {isAdmin && (
+                    <button onClick={() => setShowAddSupplier(!showAddSupplier)}
+                      style={{ padding: '8px 10px', background: 'none', border: '1px dashed var(--primary)', borderRadius: 6, cursor: 'pointer', color: 'var(--primary)', fontSize: 18, lineHeight: 1, whiteSpace: 'nowrap' }}
+                      title="Добавить поставщика">
+                      <UserPlus size={16} />
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
 
-            {/* Быстрое добавление поставщика */}
-            {showAddSupplier && (
+            {/* Быстрое добавление поставщика (только админ: POST /suppliers) */}
+            {isAdmin && showAddSupplier && (
               <div style={{ marginBottom: 8, padding: '8px', background: 'var(--bg)', borderRadius: 6, border: '1px solid var(--border)' }}>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'end' }}>
                   <div>
@@ -622,9 +643,11 @@ export function PartsPage() {
                 <ArrowDownToLine size={14} /> {receiving ? '...' : 'Оприходовать'}
               </button>
             </div>
+            </>
+            )}
 
-            {/* Списание */}
-            {isAdmin && (
+            {/* Списание (право parts.writeoff) */}
+            {(isAdmin || canWriteoff) && (
               <>
                 <h4 style={{ fontSize: 14, marginBottom: 8, marginTop: 20, color: '#ef4444' }}>Списать со склада</h4>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'end' }}>

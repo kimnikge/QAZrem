@@ -7,6 +7,7 @@ import { getOrder, getOrderStatuses, updateOrderStatus, updateOrder, getSettings
 import { OrderInfoCard } from '../components/OrderInfoCard';
 import { OrderPaymentsCard } from '../components/OrderPaymentsCard';
 import { OrderPartsSection } from '../components/OrderPartsSection';
+import { OrderReservationsSection } from '../components/OrderReservationsSection';
 import { STATUS_LABELS } from '../constants';
 import { buildOrderPatchBody } from '../utils';
 
@@ -145,6 +146,11 @@ export function OrderDetailPage() {
         {/* Запчасти и услуги */}
         <div className="detail-card">
           <OrderPartsSection orderId={order.id} initialParts={order.parts} initialServices={order.services} onRefresh={load} onError={setError} />
+        </div>
+
+        {/* Резервы запчастей */}
+        <div className="detail-card">
+          <OrderReservationsSection orderId={order.id} />
         </div>
       </div>
     </div>

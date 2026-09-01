@@ -20,7 +20,7 @@ const createSheetSchema = z.object({
 });
 
 const updateItemSchema = z.object({
-  actual_quantity: z.number().int().nonnegative(),
+  actual_quantity: z.number().int().nonnegative().nullable(),
   notes: z.string().optional(),
 });
 

@@ -48,7 +48,7 @@ export function getInventorySheets(status?: string) { return request<InventorySh
 export function createInventorySheet(data: { location_id?: number | null; notes?: string }) { return request<InventorySheet>('/warehouse/inventory', { method: 'POST', body: JSON.stringify(data) }); }
 export function getInventorySheet(id: number) { return request<{ items: InventoryItem[] } & InventorySheet>(`/warehouse/inventory/${id}`); }
 export function updateSheetStatus(id: number, status: string) { return request<InventorySheet>(`/warehouse/inventory/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }); }
-export function updateInventoryItem(itemId: number, data: { actual_quantity: number; notes?: string }) { return request<InventoryItem>(`/warehouse/inventory/items/${itemId}`, { method: 'PATCH', body: JSON.stringify(data) }); }
+export function updateInventoryItem(itemId: number, data: { actual_quantity: number | null; notes?: string }) { return request<InventoryItem>(`/warehouse/inventory/items/${itemId}`, { method: 'PATCH', body: JSON.stringify(data) }); }
 
 // ═══════════════════════════════════════════
 // Оборудование

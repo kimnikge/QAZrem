@@ -47,7 +47,7 @@ export function WarehouseInventoryPage() {
     } catch (e) { console.error(e); }
   }
 
-  async function saveItem(itemId: number, actualQty: number) {
+  async function saveItem(itemId: number, actualQty: number | null) {
     try {
       await updateInventoryItem(itemId, { actual_quantity: actualQty });
       if (selectedSheet) openSheet(selectedSheet.id);
@@ -164,7 +164,17 @@ export function WarehouseInventoryPage() {
                       <td style={{ padding: '10px 16px' }}>{item.part_name} <code style={{ fontSize: 11 }}>{item.sku}</code></td>
                       <td style={{ padding: '10px 16px', textAlign: 'right' }}>{item.expected_quantity}</td>
                       <td style={{ padding: '10px 16px', textAlign: 'right' }}>
-                        <input type="number" defaultValue={item.actual_quantity ?? ''} onBlur={e => saveItem(item.id, Math.round(Number(e.target.value)))} style={{ width: 60, padding: '4px 8px', border: '1px solid var(--border)', borderRadius: 4, textAlign: 'right' }} />
+                        <input type="number" defaultValue={item.actual_quantity ?? ''} onBlur={e => {
+                          const raw = e.target.value.trim();
+                          const prev = item.actual_quantity;
+                          if (raw === '') {
+                            // Пустой факт = «не считали» → null, а не 0 (иначе фиктивная недостача)
+                            if (prev !== null && prev !== undefined) saveItem(item.id, null);
+                            return;
+                          }
+                          const v = Math.round(Number(raw));
+                          if (v !== prev) saveItem(item.id, v);
+                        }} style={{ width: 60, padding: '4px 8px', border: '1px solid var(--border)', borderRadius: 4, textAlign: 'right' }} />
                       </td>
                       <td style={{ padding: '10px 16px', textAlign: 'right', color: disc === 0 ? '#10b981' : disc > 0 ? '#f59e0b' : '#ef4444', fontWeight: 600 }}>
                         {disc > 0 ? '+' : ''}{disc}

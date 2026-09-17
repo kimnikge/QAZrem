@@ -13,7 +13,8 @@
     "migrate:down": "node-pg-migrate down --env-path DATABASE_URL",
     "migrate:create": "node-pg-migrate create",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "stale-check": "tsx src/scripts/stale-check.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.107.0",

@@ -143,11 +143,18 @@ export function eq(
 /**
  * Белый список полей, разрешённых к обновлению через PATCH.
  * Защищает от инъекций через имена колонок.
+ *
+ * ID целевой строки подставляется сразу — вызывающему коду
+ * не нужно «перетирать» последний элемент values (старый API
+ * клал туда null и требовал ручной замены — источник багов).
+ *
+ * @returns { sql, values } готовые к pool.query(), либо null, если полей нет.
  */
 export function buildPatchQuery<T extends Record<string, unknown>>(
   input: Partial<T>,
   allowedFields: ReadonlyArray<string>,
   tableName: string,
+  id: string | number,
   idColumn: string = 'id',
 ): { sql: string; values: unknown[] } | null {
   const fields: string[] = [];
@@ -163,7 +170,7 @@ export function buildPatchQuery<T extends Record<string, unknown>>(
 
   if (fields.length === 0) return null;
 
-  values.push(null); // placeholder for id — will be replaced by caller
+  values.push(id);
   const sql = `UPDATE ${tableName} SET ${fields.join(', ')} WHERE ${idColumn} = $${values.length}`;
 
   return { sql, values };

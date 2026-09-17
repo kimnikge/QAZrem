@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { pool } from '../../db/pool.js';
 import { requireAuth, requireRole } from '../../middleware/auth.js';
+import { hidePurchasePrice } from '../../lib/permissions.js';
 
 export const warehouseReportsRouter = Router();
 
@@ -34,7 +35,10 @@ warehouseReportsRouter.get('/stock', async (req, res, next) => {
     sql += ' ORDER BY pc.name, p.name';
 
     const result = await pool.query(sql, params);
-    res.json(result.rows);
+    // Без права parts.view_purchase_price — скрываем закупочную цену
+    // и производную total_cost (quantity * purchase_price)
+    const rows = await hidePurchasePrice(req.user, result.rows, ['total_cost']);
+    res.json(rows);
   } catch (error) {
     next(error);
   }
@@ -198,7 +202,9 @@ warehouseReportsRouter.get('/by-category', async (req, res, next) => {
        GROUP BY pc.id, pc.name
        ORDER BY total_value DESC`
     );
-    res.json(result.rows);
+    // Без права parts.view_purchase_price — скрываем агрегированную закупочную стоимость
+    const rows = await hidePurchasePrice(req.user, result.rows, ['total_cost']);
+    res.json(rows);
   } catch (error) {
     next(error);
   }

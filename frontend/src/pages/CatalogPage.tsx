@@ -4,7 +4,7 @@ import {
   getCatalog, createCatalogEntry, updateCatalogEntry, deleteCatalogEntry, importCatalog,
   type CatalogEntry,
 } from '../api';
-import { useAuth } from '../context/AuthContext';
+import { usePermission } from '../hooks/usePermission';
 
 const COMMON_GROUPS = [
   'Мобильный телефон', 'Планшет', 'Ноутбук', 'Смарт часы', 'Дрон',
@@ -13,8 +13,8 @@ const COMMON_GROUPS = [
 ];
 
 export function CatalogPage() {
-  const { user } = useAuth();
-  const isAdmin = user?.role === 'admin';
+  // Мутации каталога — только с правом catalog.manage (admin — всегда true)
+  const canManageCatalog = usePermission('catalog.manage');
 
   const [items, setItems] = useState<CatalogEntry[]>([]);
   const [groups, setGroups] = useState<string[]>([]);
@@ -156,10 +156,12 @@ export function CatalogPage() {
           <span style={{ fontSize: 13, color: 'var(--text-muted)', fontWeight: 400 }}>{total} записей</span>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn-primary" onClick={() => setShowImport(true)}>
-            <Upload size={16} /> Импорт CSV
-          </button>
-          {isAdmin && (
+          {canManageCatalog && (
+            <button className="btn-primary" onClick={() => setShowImport(true)}>
+              <Upload size={16} /> Импорт CSV
+            </button>
+          )}
+          {canManageCatalog && (
             <button className="btn-primary" onClick={() => setShowCreate(true)}>
               <Plus size={16} /> Добавить
             </button>
@@ -251,7 +253,7 @@ export function CatalogPage() {
                       </div>
                     ) : (
                       <div style={{ display: 'flex', gap: 4 }}>
-                        {isAdmin && (
+                        {canManageCatalog && (
                           <>
                             <button className="btn-status" onClick={() => startEdit(item)} title="Редактировать">
                               <Edit3 size={14} />

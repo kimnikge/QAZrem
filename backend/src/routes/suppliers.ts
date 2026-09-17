@@ -74,15 +74,13 @@ suppliersRouter.patch('/:id', requireRole('admin'), async (req, res, next) => {
       input,
       ['name', 'contact_person', 'phone', 'email', 'notes'],
       'suppliers',
+      id,
     );
 
     if (!patch) {
       res.json({ message: 'Нет полей для обновления' });
       return;
     }
-
-    // Подставляем ID поставщика
-    patch.values[patch.values.length - 1] = id;
 
     const result = await pool.query(
       `${patch.sql} RETURNING *`,

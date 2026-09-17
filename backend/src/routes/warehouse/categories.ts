@@ -116,14 +116,12 @@ warehouseCategoriesRouter.patch('/:id', requirePermission('catalog.manage'), asy
     const { id } = req.params;
     const input = updateCategorySchema.parse(req.body);
 
-    const patch = buildPatchQuery(input, ['name', 'parent_id'], 'part_categories');
+    const patch = buildPatchQuery(input, ['name', 'parent_id'], 'part_categories', id);
 
     if (!patch) {
       res.json({ message: 'Нет полей для обновления' });
       return;
     }
-
-    patch.values[patch.values.length - 1] = id;
 
     const result = await pool.query(`${patch.sql} RETURNING *`, patch.values);
     if (result.rows.length === 0) throw new NotFoundError('Категория');

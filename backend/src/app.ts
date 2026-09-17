@@ -85,31 +85,35 @@ app.use('/auth', authRouter);
 // Rate limit применяем ко всем защищённым API-роутам
 app.use(apiLimiter);
 
-// Защищённые роуты (требуется JWT)
+// Защищённые роуты (требуется JWT).
+// Единая политика: КАЖДЫЙ роутер применяет requireAuth внутри себя
+// (router.use(requireAuth)), а не полагается на mount-уровень — иначе
+// новый роутер легко остаётся незащищённым. Единственное исключение —
+// searchRouter: он намеренно примитивен и защищён здесь.
 app.use('/search', requireAuth, searchRouter);
-app.use('/catalog', requireAuth, catalogRouter);
-app.use('/clients', requireAuth, clientsRouter);
-app.use('/locations', requireAuth, locationsRouter);
+app.use('/catalog', catalogRouter);
+app.use('/clients', clientsRouter);
+app.use('/locations', locationsRouter);
 app.use('/devices', devicesRouter);
 app.use('/orders', ordersRouter);
-app.use('/order-groups', requireAuth, orderGroupsRouter);
-app.use('/services', requireAuth, servicesRouter);
+app.use('/order-groups', orderGroupsRouter);
+app.use('/services', servicesRouter);
 app.use('/parts', partsRouter);
 app.use('/payments', paymentsRouter);
 app.use('/expenses', expensesRouter);
 app.use('/finance', financeRouter);
 app.use('/settings', settingsRouter);
-app.use('/suppliers', requireAuth, suppliersRouter);
+app.use('/suppliers', suppliersRouter);
 app.use('/print-templates', printTemplatesRouter);
 app.use('/users', usersRouter);
-app.use('/accounts', requireAuth, accountsRouter);
-app.use('/warehouse/categories', requireAuth, warehouseCategoriesRouter);
-app.use('/warehouse/inventory', requireAuth, warehouseInventoryRouter);
-app.use('/warehouse/reports', requireAuth, warehouseReportsRouter);
-app.use('/transfers', requireAuth, transfersRouter);
-app.use('/reports', requireAuth, reportsRouter);
-app.use('/permissions', requireAuth, permissionsRouter);
-app.use('/notifications', requireAuth, notificationsRouter);
+app.use('/accounts', accountsRouter);
+app.use('/warehouse/categories', warehouseCategoriesRouter);
+app.use('/warehouse/inventory', warehouseInventoryRouter);
+app.use('/warehouse/reports', warehouseReportsRouter);
+app.use('/transfers', transfersRouter);
+app.use('/reports', reportsRouter);
+app.use('/permissions', permissionsRouter);
+app.use('/notifications', notificationsRouter);
 
 // Централизованная обработка ошибок
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

@@ -3,8 +3,12 @@ import { z } from 'zod';
 import { pool } from '../db/pool.js';
 import { NotFoundError } from '../lib/errors.js';
 import { buildPatchQuery } from '../lib/query-builder.js';
+import { requireAuth } from '../middleware/auth.js';
 
 export const clientsRouter = Router();
+
+// Единая политика: роутер защищает себя сам (см. архитектурную заметку в app.ts)
+clientsRouter.use(requireAuth);
 
 const createClientSchema = z.object({
   name: z.string().min(2, 'Имя минимум 2 символа'),
@@ -64,15 +68,13 @@ clientsRouter.patch('/:id', async (req, res, next) => {
       input,
       ['name', 'phone', 'email', 'address'],
       'clients',
+      id,
     );
 
     if (!patch) {
       res.json({ message: 'Нет полей для обновления' });
       return;
     }
-
-    // Подставляем ID клиента
-    patch.values[patch.values.length - 1] = id;
 
     const result = await pool.query(
       `${patch.sql} RETURNING id, name, phone, email, address, total_spent, created_at`,

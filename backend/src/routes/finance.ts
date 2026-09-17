@@ -21,39 +21,132 @@ financeRouter.get('/report', requireRole('admin'), async (req, res, next) => {
     const fromDate = from || '1970-01-01';
     const toDate = to || '2999-12-31';
 
-    // Доходы: стоимость завершённых заказов (cost - discount)
-    const incomeResult = await pool.query(
-      `SELECT COALESCE(SUM(o.cost - o.discount), 0) AS total
-       FROM orders o
-       WHERE o.completed_at IS NOT NULL
-         AND o.completed_at >= $1
-         AND o.completed_at <= $2`,
-      [fromDate, toDate]
-    );
+    // Все 8 запросов независимы — выполняем параллельно (раньше — последовательно,
+    // суммарная латентность = сумме всех запросов).
+    const [
+      incomeResult,
+      paidResult,
+      expenseResult,
+      incomeOrdersResult,
+      paidOrdersResult,
+      debtOrdersResult,
+      expenseItemsResult,
+      ordersResult,
+    ] = await Promise.all([
+      // Доходы: стоимость завершённых заказов (cost - discount)
+      pool.query(
+        `SELECT COALESCE(SUM(o.cost - o.discount), 0) AS total
+         FROM orders o
+         WHERE o.completed_at IS NOT NULL
+           AND o.completed_at >= $1
+           AND o.completed_at <= $2`,
+        [fromDate, toDate]
+      ),
 
-    // Реально оплачено: сумма платежей по завершённым заказам (без возвратов)
-    const paidResult = await pool.query(
-      `SELECT COALESCE(SUM(p.amount), 0) AS total
-       FROM payments p
-       JOIN orders o ON o.id = p.order_id
-       WHERE o.completed_at IS NOT NULL
-         AND o.completed_at >= $1
-         AND o.completed_at <= $2
-         AND p.refunded_at IS NULL`,
-      [fromDate, toDate]
-    );
+      // Реально оплачено: сумма платежей по завершённым заказам (без возвратов)
+      pool.query(
+        `SELECT COALESCE(SUM(p.amount), 0) AS total
+         FROM payments p
+         JOIN orders o ON o.id = p.order_id
+         WHERE o.completed_at IS NOT NULL
+           AND o.completed_at >= $1
+           AND o.completed_at <= $2
+           AND p.refunded_at IS NULL`,
+        [fromDate, toDate]
+      ),
 
-    // Расходы: expenses + закупочная цена запчастей по завершённым заказам
-    const expenseResult = await pool.query(
-      `SELECT
-        (SELECT COALESCE(SUM(amount), 0) FROM expenses
-         WHERE created_at >= $1 AND created_at <= $2) AS direct_expenses,
-        (SELECT COALESCE(SUM(op.purchase_price_at_moment * op.quantity_used), 0)
+      // Расходы: expenses + закупочная цена запчастей по завершённым заказам
+      pool.query(
+        `SELECT
+          (SELECT COALESCE(SUM(amount), 0) FROM expenses
+           WHERE created_at >= $1 AND created_at <= $2) AS direct_expenses,
+          (SELECT COALESCE(SUM(op.purchase_price_at_moment * op.quantity_used), 0)
+           FROM order_parts op
+           JOIN orders o ON o.id = op.order_id
+           WHERE o.completed_at >= $1 AND o.completed_at <= $2) AS parts_cost`,
+        [fromDate, toDate]
+      ),
+
+      // Детализация: заказы, из которых состоит income
+      pool.query(
+        `SELECT o.id, o.cost, o.discount, o.completed_at,
+                c.name AS client_name, d.brand, d.model
+         FROM orders o
+         JOIN devices d ON d.id = o.device_id
+         JOIN clients c ON c.id = d.client_id
+         WHERE o.completed_at IS NOT NULL
+           AND o.completed_at >= $1
+           AND o.completed_at <= $2
+         ORDER BY o.completed_at DESC`,
+        [fromDate, toDate]
+      ),
+
+      // Детализация: платежи для paid (без возвратов)
+      pool.query(
+        `SELECT p.id AS payment_id, p.amount, p.payment_method_id, pm.name AS payment_method_name,
+                p.order_id, o.completed_at, c.name AS client_name,
+                p.refunded_at, p.refund_reason
+         FROM payments p
+         JOIN orders o ON o.id = p.order_id
+         JOIN devices d ON d.id = o.device_id
+         JOIN clients c ON c.id = d.client_id
+         LEFT JOIN payment_methods pm ON pm.id = p.payment_method_id
+         WHERE o.completed_at IS NOT NULL
+           AND o.completed_at >= $1
+           AND o.completed_at <= $2
+           AND p.refunded_at IS NULL
+         ORDER BY o.completed_at DESC`,
+        [fromDate, toDate]
+      ),
+
+      // Детализация: заказы с долгом (income - paid > 0)
+      pool.query(
+        `SELECT o.id, o.cost, o.discount, o.completed_at,
+                c.name AS client_name, d.brand, d.model,
+                COALESCE(payments.paid_total, 0) AS paid_total
+         FROM orders o
+         JOIN devices d ON d.id = o.device_id
+         JOIN clients c ON c.id = d.client_id
+         LEFT JOIN (
+           SELECT order_id, SUM(amount) AS paid_total
+           FROM payments
+           WHERE refunded_at IS NULL
+           GROUP BY order_id
+         ) payments ON payments.order_id = o.id
+         WHERE o.completed_at IS NOT NULL
+           AND o.completed_at >= $1
+           AND o.completed_at <= $2
+         ORDER BY (o.cost - o.discount - COALESCE(payments.paid_total, 0)) DESC`,
+        [fromDate, toDate]
+      ),
+
+      // Детализация: расходы (expenses + order_parts)
+      pool.query(
+        `SELECT 'expense' AS item_type, e.id, e.amount, ec.name AS category_name, e.description, e.created_at,
+                NULL AS part_name, NULL AS quantity_used, NULL AS purchase_price, NULL AS order_id
+         FROM expenses e
+         LEFT JOIN expense_categories ec ON ec.id = e.category_id
+         WHERE e.created_at >= $1 AND e.created_at <= $2
+         UNION ALL
+         SELECT 'part' AS item_type, op.id, (op.purchase_price_at_moment * op.quantity_used) AS amount,
+                'Запчасть' AS category_name, p.name AS description, o.completed_at AS created_at,
+                p.name AS part_name, op.quantity_used, op.purchase_price_at_moment, o.id AS order_id
          FROM order_parts op
+         JOIN parts p ON p.id = op.part_id
          JOIN orders o ON o.id = op.order_id
-         WHERE o.completed_at >= $1 AND o.completed_at <= $2) AS parts_cost`,
-      [fromDate, toDate]
-    );
+         WHERE o.completed_at >= $1 AND o.completed_at <= $2
+         ORDER BY created_at DESC`,
+        [fromDate, toDate]
+      ),
+
+      // Количество завершённых заказов
+      pool.query(
+        `SELECT COUNT(*)::int AS count
+         FROM orders
+         WHERE completed_at >= $1 AND completed_at <= $2`,
+        [fromDate, toDate]
+      ),
+    ]);
 
     const income = Number(incomeResult.rows[0].total);
     const paid = Number(paidResult.rows[0].total);
@@ -61,86 +154,6 @@ financeRouter.get('/report', requireRole('admin'), async (req, res, next) => {
     const partsCost = Number(expenseResult.rows[0].parts_cost);
     const totalExpenses = directExpenses + partsCost;
     const profit = income - totalExpenses;
-
-    // Детализация: заказы, из которых состоит income
-    const incomeOrdersResult = await pool.query(
-      `SELECT o.id, o.cost, o.discount, o.completed_at,
-              c.name AS client_name, d.brand, d.model
-       FROM orders o
-       JOIN devices d ON d.id = o.device_id
-       JOIN clients c ON c.id = d.client_id
-       WHERE o.completed_at IS NOT NULL
-         AND o.completed_at >= $1
-         AND o.completed_at <= $2
-       ORDER BY o.completed_at DESC`,
-      [fromDate, toDate]
-    );
-
-    // Детализация: платежи для paid (без возвратов)
-    const paidOrdersResult = await pool.query(
-      `SELECT p.id AS payment_id, p.amount, p.payment_method_id, pm.name AS payment_method_name,
-              p.order_id, o.completed_at, c.name AS client_name,
-              p.refunded_at, p.refund_reason
-       FROM payments p
-       JOIN orders o ON o.id = p.order_id
-       JOIN devices d ON d.id = o.device_id
-       JOIN clients c ON c.id = d.client_id
-       LEFT JOIN payment_methods pm ON pm.id = p.payment_method_id
-       WHERE o.completed_at IS NOT NULL
-         AND o.completed_at >= $1
-         AND o.completed_at <= $2
-         AND p.refunded_at IS NULL
-       ORDER BY o.completed_at DESC`,
-      [fromDate, toDate]
-    );
-
-    // Детализация: заказы с долгом (income - paid > 0)
-    const debtOrdersResult = await pool.query(
-      `SELECT o.id, o.cost, o.discount, o.completed_at,
-              c.name AS client_name, d.brand, d.model,
-              COALESCE(payments.paid_total, 0) AS paid_total
-       FROM orders o
-       JOIN devices d ON d.id = o.device_id
-       JOIN clients c ON c.id = d.client_id
-       LEFT JOIN (
-         SELECT order_id, SUM(amount) AS paid_total
-         FROM payments
-         WHERE refunded_at IS NULL
-         GROUP BY order_id
-       ) payments ON payments.order_id = o.id
-       WHERE o.completed_at IS NOT NULL
-         AND o.completed_at >= $1
-         AND o.completed_at <= $2
-       ORDER BY (o.cost - o.discount - COALESCE(payments.paid_total, 0)) DESC`,
-      [fromDate, toDate]
-    );
-
-    // Детализация: расходы (expenses + order_parts)
-    const expenseItemsResult = await pool.query(
-      `SELECT 'expense' AS item_type, e.id, e.amount, ec.name AS category_name, e.description, e.created_at,
-              NULL AS part_name, NULL AS quantity_used, NULL AS purchase_price, NULL AS order_id
-       FROM expenses e
-       LEFT JOIN expense_categories ec ON ec.id = e.category_id
-       WHERE e.created_at >= $1 AND e.created_at <= $2
-       UNION ALL
-       SELECT 'part' AS item_type, op.id, (op.purchase_price_at_moment * op.quantity_used) AS amount,
-              'Запчасть' AS category_name, p.name AS description, o.completed_at AS created_at,
-              p.name AS part_name, op.quantity_used, op.purchase_price_at_moment, o.id AS order_id
-       FROM order_parts op
-       JOIN parts p ON p.id = op.part_id
-       JOIN orders o ON o.id = op.order_id
-       WHERE o.completed_at >= $1 AND o.completed_at <= $2
-       ORDER BY created_at DESC`,
-      [fromDate, toDate]
-    );
-
-    // Количество завершённых заказов
-    const ordersResult = await pool.query(
-      `SELECT COUNT(*)::int AS count
-       FROM orders
-       WHERE completed_at >= $1 AND completed_at <= $2`,
-      [fromDate, toDate]
-    );
 
     res.json({
       period: { from: fromDate, to: toDate },

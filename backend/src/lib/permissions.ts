@@ -32,3 +32,29 @@ export async function hasPermission(
   );
   return Boolean(result.rows[0]?.allowed);
 }
+
+/**
+ * Скрывает закупочные цены (и производные поля, например total_cost)
+ * для пользователей без права parts.view_purchase_price.
+ * admin и обладатели права видят значения как есть.
+ *
+ * Используется везде, где API отдаёт строки с purchase_price:
+ * /parts, /warehouse/reports/stock, /warehouse/reports/by-category.
+ */
+export async function hidePurchasePrice(
+  user: { userId: number; role: string } | undefined,
+  rows: Array<Record<string, unknown>>,
+  derivedFields: string[] = [],
+): Promise<Array<Record<string, unknown>>> {
+  if (!user || user.role === 'admin') return rows;
+  const allowed = await hasPermission(user.userId, user.role, 'parts.view_purchase_price');
+  if (allowed) return rows;
+
+  for (const row of rows) {
+    if ('purchase_price' in row) row.purchase_price = null;
+    for (const field of derivedFields) {
+      if (field in row) row[field] = null;
+    }
+  }
+  return rows;
+}

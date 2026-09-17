@@ -8,6 +8,7 @@
 import type { PoolClient } from 'pg';
 import { pool } from '../db/pool.js';
 import { BadRequestError, NotFoundError } from '../lib/errors.js';
+import { withdrawFifo } from '../lib/fifo.js';
 import { withdrawPartLocations } from '../lib/part-locations.js';
 import { STATUS_TRANSITIONS } from '../types/domain.js';
 import { sendTelegramMessage } from './telegram.js';
@@ -315,34 +316,25 @@ export async function assignPartToOrder(
       );
     }
 
-    const batches = await dbClient.query(
-      `SELECT id, batch_number, current_quantity, purchase_price
-       FROM part_batches WHERE part_id = $1 AND current_quantity > 0
-       ORDER BY received_at ASC FOR UPDATE`,
-      [partId],
+    // FIFO-списание по партиям (единая реализация в lib/fifo.ts)
+    const usedBatches = await withdrawFifo(
+      dbClient,
+      partId,
+      quantity,
+      (missing) => `Несоответствие остатков: не хватает ${missing}шт в партиях`,
     );
 
-    let remaining = quantity;
-    for (const batch of batches.rows) {
-      if (remaining <= 0) break;
-      const take = Math.min(remaining, batch.current_quantity);
-      remaining -= take;
-
-      await dbClient.query('UPDATE part_batches SET current_quantity = current_quantity - $1 WHERE id = $2', [take, batch.id]);
+    for (const batch of usedBatches) {
       await dbClient.query(
         `INSERT INTO order_parts (order_id, part_id, quantity_used, purchase_price_at_moment, selling_price_at_moment, batch_id)
          VALUES ($1, $2, $3, $4, $5, $6)`,
-        [orderId, partId, take, batch.purchase_price, selling_price, batch.id],
+        [orderId, partId, batch.qty, batch.price, selling_price, batch.batchId],
       );
       await dbClient.query(
         `INSERT INTO part_movements (part_id, type, quantity, order_id, batch_id, batch_number)
          VALUES ($1, 'outgoing', $2, $3, $4, $5)`,
-        [partId, take, orderId, batch.id, batch.batch_number],
+        [partId, batch.qty, orderId, batch.batchId, batch.batchNumber],
       );
-    }
-
-    if (remaining > 0) {
-      throw new BadRequestError(`Несоответствие остатков: не хватает ${remaining}шт в партиях`);
     }
 
     await dbClient.query('UPDATE parts SET quantity = quantity - $1 WHERE id = $2', [quantity, partId]);
@@ -385,34 +377,27 @@ async function writeoffParts(
     }
 
     const sellingPrice = Number(stock.rows[0].selling_price);
-    const batches = await client.query(
-      `SELECT id, batch_number, current_quantity, purchase_price
-       FROM part_batches WHERE part_id = $1 AND current_quantity > 0
-       ORDER BY received_at ASC FOR UPDATE`,
-      [part.part_id],
+
+    // FIFO-списание по партиям (единая реализация в lib/fifo.ts)
+    const usedBatches = await withdrawFifo(
+      client,
+      part.part_id,
+      part.quantity,
+      (missing) =>
+        `Несоответствие остатков по запчасти #${part.part_id}: не хватает ${missing}шт в партиях`,
     );
 
-    let remaining = part.quantity;
-    for (const batch of batches.rows) {
-      if (remaining <= 0) break;
-      const take = Math.min(remaining, batch.current_quantity);
-      remaining -= take;
-
-      await client.query('UPDATE part_batches SET current_quantity = current_quantity - $1 WHERE id = $2', [take, batch.id]);
+    for (const batch of usedBatches) {
       await client.query(
         `INSERT INTO order_parts (order_id, part_id, quantity_used, purchase_price_at_moment, selling_price_at_moment, batch_id)
          VALUES ($1, $2, $3, $4, $5, $6)`,
-        [orderId, part.part_id, take, batch.purchase_price, sellingPrice, batch.id],
+        [orderId, part.part_id, batch.qty, batch.price, sellingPrice, batch.batchId],
       );
       await client.query(
         `INSERT INTO part_movements (part_id, type, quantity, order_id, batch_id, batch_number)
          VALUES ($1, 'outgoing', $2, $3, $4, $5)`,
-        [part.part_id, take, orderId, batch.id, batch.batch_number],
+        [part.part_id, batch.qty, orderId, batch.batchId, batch.batchNumber],
       );
-    }
-
-    if (remaining > 0) {
-      throw new BadRequestError(`Несоответствие остатков по запчасти #${part.part_id}: не хватает ${remaining}шт в партиях`);
     }
 
     await client.query('UPDATE parts SET quantity = quantity - $1 WHERE id = $2', [part.quantity, part.part_id]);

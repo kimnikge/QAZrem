@@ -20,6 +20,7 @@ describe('buildPatchQuery', () => {
       { name: 'Иван', phone: '+7999' },
       ALLOWED,
       'clients',
+      42,
     );
 
     expect(result).not.toBeNull();
@@ -27,7 +28,7 @@ describe('buildPatchQuery', () => {
     expect(result!.sql).toContain('name = $1');
     expect(result!.sql).toContain('phone = $2');
     expect(result!.sql).toContain('WHERE id = $3');
-    expect(result!.values).toEqual(['Иван', '+7999', null]);
+    expect(result!.values).toEqual(['Иван', '+7999', 42]);
   });
 
   it('игнорирует поля не из белого списка', () => {
@@ -35,13 +36,14 @@ describe('buildPatchQuery', () => {
       { name: 'Иван', password: 'secret', role: 'admin' },
       ALLOWED,
       'clients',
+      42,
     );
 
     expect(result).not.toBeNull();
     expect(result!.sql).toContain('name = $1');
     expect(result!.sql).not.toContain('password');
     expect(result!.sql).not.toContain('role');
-    expect(result!.values).toEqual(['Иван', null]);
+    expect(result!.values).toEqual(['Иван', 42]);
   });
 
   it('игнорирует undefined-значения', () => {
@@ -49,12 +51,14 @@ describe('buildPatchQuery', () => {
       { name: 'Иван', phone: undefined, email: undefined },
       ALLOWED,
       'clients',
+      42,
     );
 
     expect(result).not.toBeNull();
     expect(result!.sql).toContain('name = $1');
     expect(result!.sql).not.toContain('phone');
     expect(result!.sql).not.toContain('email');
+    expect(result!.values).toEqual(['Иван', 42]);
   });
 
   it('возвращает null если нет изменений', () => {
@@ -62,13 +66,14 @@ describe('buildPatchQuery', () => {
       { name: undefined, phone: undefined },
       ALLOWED,
       'clients',
+      42,
     );
 
     expect(result).toBeNull();
   });
 
   it('возвращает null для пустого объекта', () => {
-    const result = buildPatchQuery({}, ALLOWED, 'clients');
+    const result = buildPatchQuery({}, ALLOWED, 'clients', 42);
     expect(result).toBeNull();
   });
 
@@ -77,11 +82,13 @@ describe('buildPatchQuery', () => {
       { name: 'Test' },
       ALLOWED,
       'parts',
+      7,
       'part_id',
     );
 
     expect(result).not.toBeNull();
     expect(result!.sql).toContain('WHERE part_id = $2');
+    expect(result!.values).toEqual(['Test', 7]);
   });
 
   it('корректно обрабатывает null-значения', () => {
@@ -89,11 +96,12 @@ describe('buildPatchQuery', () => {
       { email: null },
       ALLOWED,
       'clients',
+      42,
     );
 
     expect(result).not.toBeNull();
     expect(result!.sql).toContain('email = $1');
-    expect(result!.values).toEqual([null, null]);
+    expect(result!.values).toEqual([null, 42]);
   });
 
   it('не инжектит SQL через имя поля (белый список защищает)', () => {
@@ -101,6 +109,7 @@ describe('buildPatchQuery', () => {
       { "name'; DROP TABLE clients;--": 'x' } as Record<string, unknown>,
       ALLOWED,
       'clients',
+      42,
     );
 
     // Такого поля нет в белом списке — запрос не строится

@@ -42,11 +42,10 @@ accountsRouter.patch('/:id', requireRole('admin'), async (req, res, next) => {
       is_active: z.boolean().optional(),
     }).parse(req.body);
 
-    const patch = buildPatchQuery(input, ['name', 'is_active'], 'company_accounts');
+    const patch = buildPatchQuery(input, ['name', 'is_active'], 'company_accounts', id);
 
     if (!patch) return res.json({ message: 'Нет изменений' });
 
-    patch.values[patch.values.length - 1] = id;
     await pool.query(patch.sql, patch.values);
 
     res.json({ message: 'Обновлено' });

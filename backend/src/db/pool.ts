@@ -6,6 +6,12 @@ export const pool = new pg.Pool({
   connectionString: env.DATABASE_URL
 });
 
+// Без слушателя 'error' ошибка простаивающего клиента (например, разрыв
+// соединения) превращается в uncaught exception и роняет весь процесс.
+pool.on('error', (err) => {
+  console.error('[pg] неожиданная ошибка простаивающего клиента:', err.message);
+});
+
 export async function closePool() {
   await pool.end();
 }

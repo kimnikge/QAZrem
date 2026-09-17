@@ -150,14 +150,13 @@ warehouseInventoryRouter.patch('/equipment/:id', requirePermission('inventory.ma
       input,
       ['name', 'master_id', 'quantity', 'notes'],
       'equipment',
+      id,
     );
 
     if (!patch) {
       res.json({ message: 'Нет полей для обновления' });
       return;
     }
-
-    patch.values[patch.values.length - 1] = id;
 
     const result = await pool.query(`${patch.sql} RETURNING *`, patch.values);
     if (result.rows.length === 0) throw new NotFoundError('Оборудование');

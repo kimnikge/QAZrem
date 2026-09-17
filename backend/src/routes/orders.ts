@@ -1,8 +1,10 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { pool } from '../db/pool.js';
+import { withTransaction } from '../db/withTransaction.js';
 import { BadRequestError, NotFoundError } from '../lib/errors.js';
 import { idParamSchema } from '../lib/validation.js';
+import { buildOrderWhere } from '../lib/order-filters.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { parsePagination } from '../middleware/pagination.js';
 import {
@@ -34,20 +36,8 @@ const orderServiceSchema = z.object({
   quantity: z.number().int().positive().default(1)
 });
 
-const createOrderWithNewDeviceSchema = z.object({
-  client: z.object({
-    name: z.string().min(2),
-    phone: z.string().min(5),
-    email: z.string().optional().or(z.literal('')),
-    address: z.string().optional().or(z.literal(''))
-  }),
-  device: z.object({
-    brand: z.string().min(1),
-    model: z.string().min(1),
-    imei: z.string().min(10),
-    serial_number: z.string().optional().or(z.literal('')),
-    color: z.string().optional().or(z.literal(''))
-  }),
+// Общие поля заказа — один раз, чтобы не дублировать в двух схемах создания
+const orderCommonFields = {
   issue_description: z.string().min(5, 'Опишите проблему минимум 5 символов'),
   master_id: z.number().int().positive().optional(),
   master_commission_pct: z.number().min(0).max(100).optional(),
@@ -68,30 +58,28 @@ const createOrderWithNewDeviceSchema = z.object({
   manager_notes: z.string().optional().or(z.literal('')),
   order_type: z.enum(['paid', 'warranty']).optional(),
   image_url: z.string().optional().or(z.literal(''))
+};
+
+const createOrderWithNewDeviceSchema = z.object({
+  ...orderCommonFields,
+  client: z.object({
+    name: z.string().min(2),
+    phone: z.string().min(5),
+    email: z.string().optional().or(z.literal('')),
+    address: z.string().optional().or(z.literal(''))
+  }),
+  device: z.object({
+    brand: z.string().min(1),
+    model: z.string().min(1),
+    imei: z.string().min(10),
+    serial_number: z.string().optional().or(z.literal('')),
+    color: z.string().optional().or(z.literal(''))
+  })
 });
 
 const createOrderWithExistingDeviceSchema = z.object({
-  device_id: z.number().int().positive(),
-  issue_description: z.string().min(5),
-  master_id: z.number().int().positive().optional(),
-  master_commission_pct: z.number().min(0).max(100).optional(),
-  deadline: z.string().optional(),
-  priority: z.enum(['normal', 'urgent', 'critical']).optional(),
-  source: z.string().min(1, 'Укажите откуда пришёл клиент'),
-  estimated_cost: z.number().nonnegative().optional(),
-  discount: z.number().nonnegative().optional(),
-  parts: z.array(orderPartSchema).optional(),
-  services: z.array(orderServiceSchema).optional(),
-  group_id: z.number().int().positive().optional().nullable(),
-  location_id: z.number().int().positive().optional().nullable(),
-  password: z.string().optional().or(z.literal('')),
-  face_id: z.boolean().optional(),
-  completeness: z.string().optional().or(z.literal('')),
-  condition: z.string().optional().or(z.literal('')),
-  appearance: z.string().optional().or(z.literal('')),
-  manager_notes: z.string().optional().or(z.literal('')),
-  order_type: z.enum(['paid', 'warranty']).optional(),
-  image_url: z.string().optional().or(z.literal(''))
+  ...orderCommonFields,
+  device_id: z.number().int().positive()
 });
 
 const updateStatusSchema = z.object({
@@ -111,65 +99,26 @@ const assignPartsSchema = z.object({
 // ============================================================
 ordersRouter.get('/', parsePagination(), async (req, res, next) => {
   try {
-    const { status, master_id, search, overdue, my, group_id,
-      created_from, created_to, brand, model, client_id } = req.query;
     const { limit, offset } = req.pagination;
 
-    // Строим WHERE-условия и параметры
-    const conditions: string[] = [];
-    const params: unknown[] = [];
-    let idx = 1;
-
-    if (status) {
-      conditions.push(`os.slug = $${idx++}`);
-      params.push(status);
-    }
-    if (master_id) {
-      conditions.push(`o.master_id = $${idx++}`);
-      params.push(Number(master_id));
-    }
-    if (search) {
-      conditions.push(`(c.name ILIKE $${idx} OR c.phone ILIKE $${idx} OR d.imei ILIKE $${idx})`);
-      params.push(`%${search}%`);
-      idx++;
-    }
-    if (overdue === 'true') {
-      conditions.push(`o.deadline IS NOT NULL AND o.deadline < NOW() AND os.is_final = FALSE`);
-    }
-    if (my === 'true' && req.user?.userId) {
-      conditions.push(`o.master_id = $${idx++}`);
-      params.push(req.user.userId);
-    }
-    if (group_id) {
-      if (group_id === 'null') {
-        conditions.push('o.group_id IS NULL');
-      } else {
-        conditions.push(`o.group_id = $${idx++}`);
-        params.push(Number(group_id));
-      }
-    }
-    if (created_from) {
-      conditions.push(`o.created_at >= $${idx++}`);
-      params.push(created_from);
-    }
-    if (created_to) {
-      conditions.push(`o.created_at <= $${idx++}`);
-      params.push(created_to);
-    }
-    if (brand) {
-      conditions.push(`d.brand ILIKE $${idx++}`);
-      params.push(`%${brand}%`);
-    }
-    if (model) {
-      conditions.push(`d.model ILIKE $${idx++}`);
-      params.push(`%${model}%`);
-    }
-    if (client_id) {
-      conditions.push(`c.id = $${idx++}`);
-      params.push(Number(client_id));
-    }
-
-    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    // Единое построение WHERE (см. lib/order-filters.ts)
+    const { clause, params } = buildOrderWhere(
+      {
+        status: String(req.query.status ?? ''),
+        master_id: String(req.query.master_id ?? ''),
+        search: String(req.query.search ?? ''),
+        overdue: String(req.query.overdue ?? ''),
+        my: String(req.query.my ?? ''),
+        group_id: String(req.query.group_id ?? ''),
+        created_from: String(req.query.created_from ?? ''),
+        created_to: String(req.query.created_to ?? ''),
+        brand: String(req.query.brand ?? ''),
+        model: String(req.query.model ?? ''),
+        client_id: String(req.query.client_id ?? ''),
+      },
+      req.user?.userId,
+    );
+    const whereClause = clause ? `WHERE ${clause}` : '';
 
     const selectClause = `
       o.id, o.device_id, o.master_id, o.status_id,
@@ -206,14 +155,21 @@ ordersRouter.get('/', parsePagination(), async (req, res, next) => {
     // Основной запрос
     const sql = `SELECT ${selectClause} FROM ${fromClause} ${whereClause}
       ORDER BY o.created_at DESC
-      LIMIT $${idx++} OFFSET $${idx++}`;
+      LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
 
-    const allParams = [...params, limit, offset];
-    const result = await pool.query(sql, allParams);
-
-    // COUNT — отдельный надёжный запрос (без regex!)
-    const countSql = `SELECT COUNT(*)::int AS total FROM ${fromClause} ${whereClause}`;
-    const countResult = await pool.query(countSql, params);
+    const [result, countResult] = await Promise.all([
+      pool.query(sql, [...params, limit, offset]),
+      // COUNT: LEFT JOIN'ы и LATERAL не влияют на число строк — не тащим их
+      pool.query(
+        `SELECT COUNT(*)::int AS total
+         FROM orders o
+         JOIN order_statuses os ON os.id = o.status_id
+         JOIN devices d ON d.id = o.device_id
+         JOIN clients c ON c.id = d.client_id
+         ${whereClause}`,
+        params,
+      ),
+    ]);
 
     res.json({
       orders: result.rows,
@@ -231,7 +187,13 @@ ordersRouter.get('/', parsePagination(), async (req, res, next) => {
 // ============================================================
 ordersRouter.get('/export', requireRole('admin'), async (req, res, next) => {
   try {
-    const { status, master_id, search, overdue, group_id } = req.query;
+    const { clause, params } = buildOrderWhere({
+      status: String(req.query.status ?? ''),
+      master_id: String(req.query.master_id ?? ''),
+      search: String(req.query.search ?? ''),
+      overdue: String(req.query.overdue ?? ''),
+      group_id: String(req.query.group_id ?? ''),
+    });
 
     let sql = `
       SELECT
@@ -248,24 +210,8 @@ ordersRouter.get('/export', requireRole('admin'), async (req, res, next) => {
       JOIN devices d ON d.id = o.device_id
       JOIN clients c ON c.id = d.client_id
       LEFT JOIN order_groups og ON og.id = o.group_id
-      WHERE 1=1
     `;
-    const params: unknown[] = [];
-    let idx = 1;
-
-    if (status) { sql += ` AND os.slug = $${idx++}`; params.push(status); }
-    if (master_id) { sql += ` AND o.master_id = $${idx++}`; params.push(Number(master_id)); }
-    if (search) {
-      sql += ` AND (c.name ILIKE $${idx} OR c.phone ILIKE $${idx} OR d.imei ILIKE $${idx})`;
-      params.push(`%${search}%`); idx++;
-    }
-    if (overdue === 'true') {
-      sql += ` AND o.deadline IS NOT NULL AND o.deadline < NOW() AND os.is_final = FALSE`;
-    }
-    if (group_id) {
-      if (group_id === 'null') sql += ' AND o.group_id IS NULL';
-      else { sql += ` AND o.group_id = $${idx++}`; params.push(Number(group_id)); }
-    }
+    if (clause) sql += ` WHERE ${clause}`;
 
     sql += ' ORDER BY o.created_at DESC LIMIT 5000';
     const result = await pool.query(sql, params);
@@ -307,7 +253,7 @@ ordersRouter.get('/export', requireRole('admin'), async (req, res, next) => {
 // ============================================================
 // GET /orders/:id — детали заказа
 // ============================================================
-ordersRouter.get('/:id', async (req, res, next) => {
+ordersRouter.get('/:id([0-9]+)', async (req, res, next) => {
   try {
     const id = idParamSchema.parse(req.params.id);
 
@@ -376,9 +322,23 @@ ordersRouter.get('/:id', async (req, res, next) => {
       [id]
     );
 
-    // Платежи
+    // Платежи + их сплиты одним запросом (раньше — N+1: запрос на каждый платёж)
     const paymentsResult = await pool.query(
-      `SELECT p.*, pm.name AS payment_method_name
+      `SELECT p.*, pm.name AS payment_method_name,
+        COALESCE(
+          (SELECT json_agg(json_build_object(
+              'id', ps.id,
+              'payment_id', ps.payment_id,
+              'account_id', ps.account_id,
+              'amount', ps.amount,
+              'created_at', ps.created_at,
+              'account_name', ca.name
+            ) ORDER BY ps.id)
+           FROM payment_splits ps
+           JOIN company_accounts ca ON ca.id = ps.account_id
+           WHERE ps.payment_id = p.id),
+          '[]'::json
+        ) AS splits
       FROM payments p
       JOIN payment_methods pm ON pm.id = p.payment_method_id
       WHERE p.order_id = $1
@@ -386,25 +346,12 @@ ordersRouter.get('/:id', async (req, res, next) => {
       [id]
     );
 
-    // Splits для каждого платежа
-    const paymentsWithSplits = [];
-    for (const payment of paymentsResult.rows) {
-      const splitsResult = await pool.query(
-        `SELECT ps.*, ca.name AS account_name
-        FROM payment_splits ps
-        JOIN company_accounts ca ON ca.id = ps.account_id
-        WHERE ps.payment_id = $1`,
-        [payment.id]
-      );
-      paymentsWithSplits.push({ ...payment, splits: splitsResult.rows });
-    }
-
     res.json({
       ...orderResult.rows[0],
       history: historyResult.rows,
       parts: partsResult.rows,
       services: servicesResult.rows,
-      payments: paymentsWithSplits
+      payments: paymentsResult.rows
     });
   } catch (error) {
     next(error);
@@ -414,7 +361,7 @@ ordersRouter.get('/:id', async (req, res, next) => {
 // ============================================================
 // GET /orders/:id/statuses — доступные статусы для перехода
 // ============================================================
-ordersRouter.get('/:id/statuses', async (req, res, next) => {
+ordersRouter.get('/:id([0-9]+)/statuses', async (req, res, next) => {
   try {
     const { id } = req.params;
     const order = await pool.query(
@@ -479,113 +426,113 @@ const updateOrderSchema = z.object({
   device_serial_number: z.string().optional().or(z.literal(''))
 });
 
-ordersRouter.patch('/:id', requireRole('admin', 'master'), async (req, res, next) => {
+ordersRouter.patch('/:id([0-9]+)', requireRole('admin', 'master'), async (req, res, next) => {
   try {
     const id = idParamSchema.parse(req.params.id);
     const input = updateOrderSchema.parse(req.body);
 
-    // Валидация: скидка не может превышать стоимость
-    if (input.discount !== undefined) {
-      const currentOrder = await pool.query(
+    // Все изменения (orders + devices + clients) — атомарно, одной транзакцией.
+    // Раньше три UPDATE шли отдельными запросами: при ошибке на середине
+    // данные рассинхронизировались.
+    await withTransaction(async (dbClient) => {
+      // Один SELECT вместо двух (было: проверка скидки + отдельно device_id)
+      const orderRow = await dbClient.query(
         'SELECT cost, device_id FROM orders WHERE id = $1',
         [id]
       );
-      if (currentOrder.rows.length === 0) throw new NotFoundError('Заказ');
-      const currentCost = input.cost ?? Number(currentOrder.rows[0].cost);
-      if (input.discount > currentCost) {
-        throw new BadRequestError('Скидка не может превышать стоимость заказа');
+      if (orderRow.rows.length === 0) throw new NotFoundError('Заказ');
+      const deviceId = orderRow.rows[0].device_id;
+
+      // Валидация: скидка не может превышать стоимость
+      if (input.discount !== undefined) {
+        const currentCost = input.cost ?? Number(orderRow.rows[0].cost);
+        if (input.discount > currentCost) {
+          throw new BadRequestError('Скидка не может превышать стоимость заказа');
+        }
       }
-    }
 
-    // Получаем текущий заказ для device_id (нужен для обновления устройства)
-    const orderRow = await pool.query(
-      'SELECT device_id FROM orders WHERE id = $1',
-      [id]
-    );
-    if (orderRow.rows.length === 0) throw new NotFoundError('Заказ');
-    const deviceId = orderRow.rows[0].device_id;
+      // Обновление полей заказа
+      const orderFields: string[] = [];
+      const orderValues: unknown[] = [];
+      let idx = 1;
 
-    // Обновление полей заказа
-    const orderFields: string[] = [];
-    const orderValues: unknown[] = [];
-    let idx = 1;
+      const orderFieldKeys = ['cost', 'estimated_cost', 'discount', 'diagnosis', 'issue_description',
+        'internal_comment', 'master_id', 'master_commission_pct', 'deadline', 'priority', 'source', 'group_id',
+        'password', 'face_id', 'completeness', 'condition', 'appearance', 'manager_notes', 'order_type',
+        'image_url'];
 
-    const orderFieldKeys = ['cost', 'estimated_cost', 'discount', 'diagnosis', 'issue_description',
-      'internal_comment', 'master_id', 'master_commission_pct', 'deadline', 'priority', 'source', 'group_id',
-      'password', 'face_id', 'completeness', 'condition', 'appearance', 'manager_notes', 'order_type',
-      'image_url'];
-
-    for (const key of orderFieldKeys) {
-      const value = (input as Record<string, unknown>)[key];
-      if (value !== undefined) {
-        orderFields.push(`${key} = $${idx++}`);
-        orderValues.push(value);
+      for (const key of orderFieldKeys) {
+        const value = (input as Record<string, unknown>)[key];
+        if (value !== undefined) {
+          orderFields.push(`${key} = $${idx++}`);
+          orderValues.push(value);
+        }
       }
-    }
 
-    // Обновление устройства
-    const deviceFieldMap: Record<string, string> = {
-      device_brand: 'brand',
-      device_model: 'model',
-      device_imei: 'imei',
-      device_serial_number: 'serial_number'
-    };
-    const deviceFields: string[] = [];
-    const deviceValues: unknown[] = [];
+      // Обновление устройства
+      const deviceFieldMap: Record<string, string> = {
+        device_brand: 'brand',
+        device_model: 'model',
+        device_imei: 'imei',
+        device_serial_number: 'serial_number'
+      };
+      const deviceFields: string[] = [];
+      const deviceValues: unknown[] = [];
 
-    for (const [inputKey, colName] of Object.entries(deviceFieldMap)) {
-      const value = (input as Record<string, unknown>)[inputKey];
-      if (value !== undefined) {
-        deviceFields.push(`${colName} = $${deviceValues.length + 1}`);
-        deviceValues.push(value);
+      for (const [inputKey, colName] of Object.entries(deviceFieldMap)) {
+        const value = (input as Record<string, unknown>)[inputKey];
+        if (value !== undefined) {
+          deviceFields.push(`${colName} = $${deviceValues.length + 1}`);
+          deviceValues.push(value);
+        }
       }
-    }
 
-    if (deviceFields.length > 0) {
-      deviceValues.push(deviceId);
-      await pool.query(
-        `UPDATE devices SET ${deviceFields.join(', ')} WHERE id = $${deviceValues.length}`,
-        deviceValues
-      );
-    }
-
-    // Обновление клиента (через devices.client_id)
-    const clientFieldMap: Record<string, string> = {
-      client_name: 'name',
-      client_phone: 'phone'
-    };
-    const clientFields: string[] = [];
-    const clientValues: unknown[] = [];
-
-    for (const [inputKey, colName] of Object.entries(clientFieldMap)) {
-      const value = (input as Record<string, unknown>)[inputKey];
-      if (value !== undefined) {
-        clientFields.push(`${colName} = $${clientValues.length + 1}`);
-        clientValues.push(value);
-      }
-    }
-
-    if (clientFields.length > 0) {
-      // Получаем client_id через device
-      const dev = await pool.query('SELECT client_id FROM devices WHERE id = $1', [deviceId]);
-      if (dev.rows.length > 0) {
-        const clientId = dev.rows[0].client_id;
-        clientValues.push(clientId);
-        await pool.query(
-          `UPDATE clients SET ${clientFields.join(', ')} WHERE id = $${clientValues.length}`,
-          clientValues
+      if (deviceFields.length > 0) {
+        deviceValues.push(deviceId);
+        await dbClient.query(
+          `UPDATE devices SET ${deviceFields.join(', ')} WHERE id = $${deviceValues.length}`,
+          deviceValues
         );
       }
-    }
 
-    // Если есть поля заказа — обновляем
-    if (orderFields.length > 0) {
-      orderValues.push(id);
-      await pool.query(
-        `UPDATE orders SET ${orderFields.join(', ')} WHERE id = $${idx}`,
-        orderValues
-      );
-    }
+      // Обновление клиента (через devices.client_id)
+      const clientFieldMap: Record<string, string> = {
+        client_name: 'name',
+        client_phone: 'phone'
+      };
+      const clientFields: string[] = [];
+      const clientValues: unknown[] = [];
+
+      for (const [inputKey, colName] of Object.entries(clientFieldMap)) {
+        const value = (input as Record<string, unknown>)[inputKey];
+        if (value !== undefined) {
+          clientFields.push(`${colName} = $${clientValues.length + 1}`);
+          clientValues.push(value);
+        }
+      }
+
+      if (clientFields.length > 0) {
+        // Получаем client_id через device
+        const dev = await dbClient.query('SELECT client_id FROM devices WHERE id = $1', [deviceId]);
+        if (dev.rows.length > 0) {
+          const clientId = dev.rows[0].client_id;
+          clientValues.push(clientId);
+          await dbClient.query(
+            `UPDATE clients SET ${clientFields.join(', ')} WHERE id = $${clientValues.length}`,
+            clientValues
+          );
+        }
+      }
+
+      // Если есть поля заказа — обновляем
+      if (orderFields.length > 0) {
+        orderValues.push(id);
+        await dbClient.query(
+          `UPDATE orders SET ${orderFields.join(', ')} WHERE id = $${idx}`,
+          orderValues
+        );
+      }
+    });
 
     // Возвращаем обновлённый заказ
     const result = await pool.query(`
@@ -636,7 +583,7 @@ ordersRouter.post('/', requireRole('admin', 'reception'), async (req, res, next)
 // ============================================================
 // PATCH /orders/:id/status — смена статуса (делегировано сервису)
 // ============================================================
-ordersRouter.patch('/:id/status', requireRole('admin', 'master'), async (req, res, next) => {
+ordersRouter.patch('/:id([0-9]+)/status', requireRole('admin', 'master'), async (req, res, next) => {
   try {
     const id = idParamSchema.parse(req.params.id);
     const { status_slug, comment } = updateStatusSchema.parse(req.body);
@@ -651,7 +598,7 @@ ordersRouter.patch('/:id/status', requireRole('admin', 'master'), async (req, re
 // ============================================================
 // POST /orders/:id/parts — списание запчасти на заказ (FIFO, делегировано сервису)
 // ============================================================
-ordersRouter.post('/:id/parts', requireRole('admin', 'master'), async (req, res, next) => {
+ordersRouter.post('/:id([0-9]+)/parts', requireRole('admin', 'master'), async (req, res, next) => {
   try {
     const orderId = idParamSchema.parse(req.params.id);
     const { part_id, quantity } = assignPartsSchema.parse(req.body);
@@ -670,72 +617,67 @@ ordersRouter.post('/:id/parts', requireRole('admin', 'master'), async (req, res,
 // ============================================================
 // DELETE /orders/:id/parts/:opId — возврат запчасти на склад
 // ============================================================
-ordersRouter.delete('/:id/parts/:opId', requireRole('admin'), async (req, res, next) => {
-  const dbClient = await pool.connect();
+ordersRouter.delete('/:id([0-9]+)/parts/:opId([0-9]+)', requireRole('admin'), async (req, res, next) => {
   try {
     const orderId = idParamSchema.parse(req.params.id);
     const opId = idParamSchema.parse(req.params.opId);
 
-    await dbClient.query('BEGIN');
-
-    const row = await dbClient.query(
-      `SELECT op.id, op.part_id, op.quantity_used, op.batch_id, p.name
-       FROM order_parts op JOIN parts p ON p.id = op.part_id
-       WHERE op.id = $1 AND op.order_id = $2`,
-      [opId, orderId]
-    );
-    if (row.rows.length === 0) throw new NotFoundError('Запчасть в заказе');
-
-    const { part_id, quantity_used, batch_id, name } = row.rows[0];
-
-    // Возвращаем остаток в ту же партию
-    if (batch_id) {
-      await dbClient.query(
-        'UPDATE part_batches SET current_quantity = current_quantity + $1 WHERE id = $2',
-        [quantity_used, batch_id]
+    const result = await withTransaction(async (dbClient) => {
+      const row = await dbClient.query(
+        `SELECT op.id, op.part_id, op.quantity_used, op.batch_id, p.name
+         FROM order_parts op JOIN parts p ON p.id = op.part_id
+         WHERE op.id = $1 AND op.order_id = $2`,
+        [opId, orderId]
       );
-    }
+      if (row.rows.length === 0) throw new NotFoundError('Запчасть в заказе');
 
-    // Возвращаем на склад
-    await dbClient.query('UPDATE parts SET quantity = quantity + $1 WHERE id = $2', [quantity_used, part_id]);
+      const { part_id, quantity_used, batch_id, name } = row.rows[0];
 
-    // Возвращаем остаток на локацию «Общий склад»
-    await depositPartLocation(dbClient, part_id, null, quantity_used);
+      // Возвращаем остаток в ту же партию
+      if (batch_id) {
+        await dbClient.query(
+          'UPDATE part_batches SET current_quantity = current_quantity + $1 WHERE id = $2',
+          [quantity_used, batch_id]
+        );
+      }
 
-    // Удаляем из order_parts
-    await dbClient.query('DELETE FROM order_parts WHERE id = $1', [opId]);
+      // Возвращаем на склад
+      await dbClient.query('UPDATE parts SET quantity = quantity + $1 WHERE id = $2', [quantity_used, part_id]);
 
-    // Запись в part_movements с типом return_order
-    await dbClient.query(
-      `INSERT INTO part_movements (part_id, type, quantity, order_id, batch_id)
-       VALUES ($1, 'return_order', $2, $3, $4)`,
-      [part_id, quantity_used, orderId, batch_id]
-    );
+      // Возвращаем остаток на локацию «Общий склад»
+      await depositPartLocation(dbClient, part_id, null, quantity_used);
 
-    // Пересчитать стоимость заказа
-    await recalcOrderCost(dbClient, orderId);
+      // Удаляем из order_parts
+      await dbClient.query('DELETE FROM order_parts WHERE id = $1', [opId]);
 
-    await dbClient.query('COMMIT');
+      // Запись в part_movements с типом return_order
+      await dbClient.query(
+        `INSERT INTO part_movements (part_id, type, quantity, order_id, batch_id)
+         VALUES ($1, 'return_order', $2, $3, $4)`,
+        [part_id, quantity_used, orderId, batch_id]
+      );
 
-    // Уведомление: возврат с заказа (Блок 11 ТЗ)
-    await createNotification('return_order', `Возврат с заказа: ${name}`, {
-      part_id, part_name: name, quantity: quantity_used, order_id: orderId,
+      // Пересчитать стоимость заказа
+      await recalcOrderCost(dbClient, orderId);
+
+      return { name, quantity_used, orderId, part_id };
     });
 
-    res.json({ message: `Запчасть "${name}" возвращена на склад`, quantity: quantity_used });
+    // Уведомление: возврат с заказа (Блок 11 ТЗ) — после COMMIT
+    await createNotification('return_order', `Возврат с заказа: ${result.name}`, {
+      part_id: result.part_id, part_name: result.name, quantity: result.quantity_used, order_id: result.orderId,
+    });
+
+    res.json({ message: `Запчасть "${result.name}" возвращена на склад`, quantity: result.quantity_used });
   } catch (error) {
-    await dbClient.query('ROLLBACK');
     next(error);
-  } finally {
-    dbClient.release();
   }
 });
 
 // ============================================================
 // POST /orders/:id/reserve — зарезервировать запчасть под заказ
 // ============================================================
-ordersRouter.post('/:id/reserve', requireRole('admin', 'master'), async (req, res, next) => {
-  const dbClient = await pool.connect();
+ordersRouter.post('/:id([0-9]+)/reserve', requireRole('admin', 'master'), async (req, res, next) => {
   try {
     const orderId = parseInt(req.params.id);
     const { part_id, quantity, batch_id, expires_at } = z.object({
@@ -745,64 +687,61 @@ ordersRouter.post('/:id/reserve', requireRole('admin', 'master'), async (req, re
       expires_at: z.string().datetime({ offset: true }).optional(),
     }).parse(req.body);
 
-    await dbClient.query('BEGIN');
-
-    // Автопротухание истёкших резервов (expires_at < NOW())
-    await dbClient.query(
-      `UPDATE reservations SET status = 'cancelled'
-       WHERE status = 'active' AND expires_at IS NOT NULL AND expires_at < NOW()`
-    );
-
-    // Проверяем заказ
-    const order = await dbClient.query(
-      `SELECT o.id, os.is_final FROM orders o
-       JOIN order_statuses os ON os.id = o.status_id WHERE o.id = $1`,
-      [orderId]
-    );
-    if (order.rows.length === 0) throw new NotFoundError('Заказ');
-    if (order.rows[0].is_final) {
-      throw new BadRequestError('Нельзя резервировать в завершённом заказе');
-    }
-
-    // Проверяем остаток
-    const part = await dbClient.query(
-      'SELECT id, name, quantity FROM parts WHERE id = $1 FOR UPDATE', [part_id]
-    );
-    if (part.rows.length === 0) throw new NotFoundError('Запчасть');
-
-    // Проверяем доступный остаток (с учётом активных резервов)
-    const reserved = await dbClient.query(
-      `SELECT COALESCE(SUM(quantity), 0)::int AS reserved
-       FROM reservations WHERE part_id = $1 AND status = 'active'`,
-      [part_id]
-    );
-    const available = part.rows[0].quantity - reserved.rows[0].reserved;
-    if (available < quantity) {
-      throw new BadRequestError(
-        `Недостаточно для резерва. Доступно: ${available} (всего ${part.rows[0].quantity}, зарезервировано ${reserved.rows[0].reserved})`
+    const reservation = await withTransaction(async (dbClient) => {
+      // Автопротухание истёкших резервов (expires_at < NOW())
+      await dbClient.query(
+        `UPDATE reservations SET status = 'cancelled'
+         WHERE status = 'active' AND expires_at IS NOT NULL AND expires_at < NOW()`
       );
-    }
 
-    const result = await dbClient.query(
-      `INSERT INTO reservations (part_id, batch_id, order_id, quantity, reserved_by, expires_at, status)
-       VALUES ($1, $2, $3, $4, $5, COALESCE($6::timestamptz, NOW() + INTERVAL '7 days'), 'active') RETURNING *`,
-      [part_id, batch_id || null, orderId, quantity, req.user!.userId, expires_at ?? null]
-    );
+      // Проверяем заказ
+      const order = await dbClient.query(
+        `SELECT o.id, os.is_final FROM orders o
+         JOIN order_statuses os ON os.id = o.status_id WHERE o.id = $1`,
+        [orderId]
+      );
+      if (order.rows.length === 0) throw new NotFoundError('Заказ');
+      if (order.rows[0].is_final) {
+        throw new BadRequestError('Нельзя резервировать в завершённом заказе');
+      }
 
-    await dbClient.query('COMMIT');
-    res.status(201).json(result.rows[0]);
+      // Проверяем остаток
+      const part = await dbClient.query(
+        'SELECT id, name, quantity FROM parts WHERE id = $1 FOR UPDATE', [part_id]
+      );
+      if (part.rows.length === 0) throw new NotFoundError('Запчасть');
+
+      // Проверяем доступный остаток (с учётом активных резервов)
+      const reserved = await dbClient.query(
+        `SELECT COALESCE(SUM(quantity), 0)::int AS reserved
+         FROM reservations WHERE part_id = $1 AND status = 'active'`,
+        [part_id]
+      );
+      const available = part.rows[0].quantity - reserved.rows[0].reserved;
+      if (available < quantity) {
+        throw new BadRequestError(
+          `Недостаточно для резерва. Доступно: ${available} (всего ${part.rows[0].quantity}, зарезервировано ${reserved.rows[0].reserved})`
+        );
+      }
+
+      const result = await dbClient.query(
+        `INSERT INTO reservations (part_id, batch_id, order_id, quantity, reserved_by, expires_at, status)
+         VALUES ($1, $2, $3, $4, $5, COALESCE($6::timestamptz, NOW() + INTERVAL '7 days'), 'active') RETURNING *`,
+        [part_id, batch_id || null, orderId, quantity, req.user!.userId, expires_at ?? null]
+      );
+      return result.rows[0];
+    });
+
+    res.status(201).json(reservation);
   } catch (error) {
-    await dbClient.query('ROLLBACK');
     next(error);
-  } finally {
-    dbClient.release();
   }
 });
 
 // ============================================================
 // GET /orders/:id/reservations — список резервов по заказу
 // ============================================================
-ordersRouter.get('/:id/reservations', async (req, res, next) => {
+ordersRouter.get('/:id([0-9]+)/reservations', async (req, res, next) => {
   try {
     const orderId = parseInt(req.params.id);
     const result = await pool.query(
@@ -826,13 +765,12 @@ ordersRouter.get('/:id/reservations', async (req, res, next) => {
 // ============================================================
 // DELETE /orders/:id/reserve/:reservationId — отменить резерв
 // ============================================================
-ordersRouter.delete('/:id/reserve/:reservationId', requireRole('admin'), async (req, res, next) => {
-  const dbClient = await pool.connect();
+ordersRouter.delete('/:id([0-9]+)/reserve/:reservationId([0-9]+)', requireRole('admin'), async (req, res, next) => {
   try {
     const orderId = parseInt(req.params.id);
     const reservationId = parseInt(req.params.reservationId);
 
-    const result = await dbClient.query(
+    const result = await pool.query(
       `UPDATE reservations SET status = 'cancelled'
        WHERE id = $1 AND order_id = $2 AND status = 'active' RETURNING *`,
       [reservationId, orderId]
@@ -842,15 +780,13 @@ ordersRouter.delete('/:id/reserve/:reservationId', requireRole('admin'), async (
     res.json({ message: 'Резерв отменён', reservation: result.rows[0] });
   } catch (error) {
     next(error);
-  } finally {
-    dbClient.release();
   }
 });
 
 // ============================================================
 // POST /orders/:id/services — добавить услугу к заказу
 // ============================================================
-ordersRouter.post('/:id/services', requireRole('admin', 'master', 'reception'), async (req, res, next) => {
+ordersRouter.post('/:id([0-9]+)/services', requireRole('admin', 'master', 'reception'), async (req, res, next) => {
   try {
     const orderId = parseInt(req.params.id);
     const { service_id, quantity } = z.object({
@@ -858,53 +794,62 @@ ordersRouter.post('/:id/services', requireRole('admin', 'master', 'reception'), 
       quantity: z.number().int().positive().default(1)
     }).parse(req.body);
 
-    // Проверить заказ
-    const order = await pool.query(
-      `SELECT o.id, os.is_final FROM orders o
-       JOIN order_statuses os ON os.id = o.status_id WHERE o.id = $1`,
-      [orderId]
-    );
-    if (order.rows.length === 0) throw new NotFoundError('Заказ');
-    if (order.rows[0].is_final) throw new BadRequestError('Нельзя добавить услугу в завершённый заказ');
+    // Атомарно: проверка → вставка → пересчёт стоимости
+    const created = await withTransaction(async (dbClient) => {
+      // Проверить заказ
+      const order = await dbClient.query(
+        `SELECT o.id, os.is_final FROM orders o
+         JOIN order_statuses os ON os.id = o.status_id WHERE o.id = $1`,
+        [orderId]
+      );
+      if (order.rows.length === 0) throw new NotFoundError('Заказ');
+      if (order.rows[0].is_final) throw new BadRequestError('Нельзя добавить услугу в завершённый заказ');
 
-    // Найти услугу
-    const svc = await pool.query('SELECT * FROM services WHERE id = $1', [service_id]);
-    if (svc.rows.length === 0) throw new NotFoundError('Услуга');
+      // Найти услугу
+      const svc = await dbClient.query('SELECT * FROM services WHERE id = $1', [service_id]);
+      if (svc.rows.length === 0) throw new NotFoundError('Услуга');
 
-    const { price, master_commission_pct } = svc.rows[0];
+      const { price, master_commission_pct } = svc.rows[0];
 
-    const result = await pool.query(
-      `INSERT INTO order_services (order_id, service_id, quantity, price_at_moment, master_commission_pct_at_moment)
-       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [orderId, service_id, quantity, price, master_commission_pct]
-    );
+      const result = await dbClient.query(
+        `INSERT INTO order_services (order_id, service_id, quantity, price_at_moment, master_commission_pct_at_moment)
+         VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+        [orderId, service_id, quantity, price, master_commission_pct]
+      );
 
-    // Пересчитать стоимость заказа
-    await recalcOrderCost(pool, orderId);
+      // Пересчитать стоимость заказа
+      await recalcOrderCost(dbClient, orderId);
 
-    res.status(201).json(result.rows[0]);
+      return result.rows[0];
+    });
+
+    res.status(201).json(created);
   } catch (error) { next(error); }
 });
 
 // ============================================================
 // DELETE /orders/:id/services/:sid — убрать услугу из заказа
 // ============================================================
-ordersRouter.delete('/:id/services/:sid', requireRole('admin', 'master', 'reception'), async (req, res, next) => {
+ordersRouter.delete('/:id([0-9]+)/services/:sid([0-9]+)', requireRole('admin', 'master', 'reception'), async (req, res, next) => {
   try {
     const orderId = parseInt(req.params.id);
     const serviceId = parseInt(req.params.sid);
 
-    const row = await pool.query(
-      'SELECT osrv.quantity, s.name FROM order_services osrv JOIN services s ON s.id = osrv.service_id WHERE osrv.order_id = $1 AND osrv.service_id = $2',
-      [orderId, serviceId]
-    );
-    if (row.rows.length === 0) throw new NotFoundError('Услуга в заказе');
+    const removedName = await withTransaction(async (dbClient) => {
+      const row = await dbClient.query(
+        'SELECT osrv.quantity, s.name FROM order_services osrv JOIN services s ON s.id = osrv.service_id WHERE osrv.order_id = $1 AND osrv.service_id = $2',
+        [orderId, serviceId]
+      );
+      if (row.rows.length === 0) throw new NotFoundError('Услуга в заказе');
 
-    await pool.query('DELETE FROM order_services WHERE order_id = $1 AND service_id = $2', [orderId, serviceId]);
+      await dbClient.query('DELETE FROM order_services WHERE order_id = $1 AND service_id = $2', [orderId, serviceId]);
 
-    // Пересчитать стоимость заказа
-    await recalcOrderCost(pool, orderId);
+      // Пересчитать стоимость заказа
+      await recalcOrderCost(dbClient, orderId);
 
-    res.json({ message: `Услуга "${row.rows[0].name}" убрана из заказа` });
+      return row.rows[0].name;
+    });
+
+    res.json({ message: `Услуга "${removedName}" убрана из заказа` });
   } catch (error) { next(error); }
 });

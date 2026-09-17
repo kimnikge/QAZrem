@@ -32,6 +32,14 @@ async function login(l: string, pw: string): Promise<string> {
 beforeAll(async () => {
   adminToken = await login(ADMIN_LOGIN, ADMIN_PASSWORD);
 
+  // Защита от мусора прошлых прогонов: если предыдущий запуск упал после
+  // выдачи права и не дошёл до afterAll — очищаем сейчас, иначе тесты
+  // «без права» падают из-за чужого состояния БД.
+  await pool.query(
+    `DELETE FROM role_permissions
+     WHERE role = 'master' AND permission IN ('parts.view_purchase_price', 'parts.receive', 'parts.writeoff', 'catalog.manage')`,
+  );
+
   // Уникальный мастер-фикстура
   const masterLogin = `perm_master_${ts}`;
   const reg = await request(app)
@@ -81,6 +89,22 @@ describe('Гибкие права доступа (Блок 10)', () => {
   it('без права: мастер не видит закупочную цену', async () => {
     const res = await request(app).get(`/parts/${testPartId}`).set(auth(masterToken)).expect(200);
     expect(res.body.purchase_price).toBeNull();
+  });
+
+  it('без права: закупочные цены скрыты в складском отчёте остатков', async () => {
+    const res = await request(app).get('/warehouse/reports/stock').set(auth(masterToken)).expect(200);
+    const row = res.body.find((r: { id: number }) => r.id === testPartId);
+    expect(row).toBeTruthy();
+    expect(row.purchase_price).toBeNull();
+    expect(row.total_cost).toBeNull();
+  });
+
+  it('без права: мутации каталога устройств запрещены мастеру', async () => {
+    await request(app)
+      .post('/catalog')
+      .set(auth(masterToken))
+      .send({ brand: `TEST-бренд-${ts}`, model: `TEST-модель-${ts}` })
+      .expect(403);
   });
 
   it('GET /permissions/check → false', async () => {

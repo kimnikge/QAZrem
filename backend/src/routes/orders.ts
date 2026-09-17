@@ -14,6 +14,7 @@ import {
   recalcOrderCost,
 } from '../services/order.service.js';
 import { depositPartLocation } from '../lib/part-locations.js';
+import { hasPermission } from '../lib/permissions.js';
 import { STATUS_TRANSITIONS } from '../types/domain.js';
 import { createNotification, checkStockAlerts } from '../services/notifications.service.js';
 
@@ -302,6 +303,20 @@ ordersRouter.get('/:id([0-9]+)', async (req, res, next) => {
       [id]
     );
 
+    // Без права parts.view_purchase_price закупочные цены скрываются
+    let partsRows = partsResult.rows;
+    if (req.user && req.user.role !== 'admin') {
+      const canViewCost = await hasPermission(
+        req.user.userId, req.user.role, 'parts.view_purchase_price',
+      );
+      if (!canViewCost) {
+        partsRows = partsRows.map((r: Record<string, unknown>) => ({
+          ...r,
+          purchase_price_at_moment: null,
+        }));
+      }
+    }
+
     // Услуги
     const servicesResult = await pool.query(
       `SELECT osrv.*, s.name AS service_name
@@ -338,7 +353,7 @@ ordersRouter.get('/:id([0-9]+)', async (req, res, next) => {
     res.json({
       ...orderResult.rows[0],
       history: historyResult.rows,
-      parts: partsResult.rows,
+      parts: partsRows,
       services: servicesResult.rows,
       payments: paymentsResult.rows
     });

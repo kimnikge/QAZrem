@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { pool } from '../db/pool.js';
 import { NotFoundError } from '../lib/errors.js';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, requireRole } from '../middleware/auth.js';
 
 export const devicesRouter = Router();
 
@@ -148,7 +148,7 @@ devicesRouter.get('/:id', async (req, res, next) => {
   }
 });
 
-devicesRouter.post('/', async (req, res, next) => {
+devicesRouter.post('/', requireRole('admin'), async (req, res, next) => {
   try {
     const input = createDeviceSchema.parse(req.body);
     const result = await pool.query(

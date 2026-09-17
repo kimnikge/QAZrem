@@ -107,6 +107,30 @@ describe('Гибкие права доступа (Блок 10)', () => {
       .expect(403);
   });
 
+  it('без права: мастер не может делать кассовые операции', async () => {
+    await request(app)
+      .post('/accounts/1/operations')
+      .set(auth(masterToken))
+      .send({ type: 'income', amount: 1, description: 'TEST-нелегальный приход' })
+      .expect(403);
+  });
+
+  it('без права: мастер не может перемещать средства между кассами', async () => {
+    await request(app)
+      .post('/transfers')
+      .set(auth(masterToken))
+      .send({ from_account_id: 1, to_account_id: 2, amount: 1 })
+      .expect(403);
+  });
+
+  it('без права: мастер не может создавать услуги', async () => {
+    await request(app)
+      .post('/services')
+      .set(auth(masterToken))
+      .send({ name: 'TEST-нелегальная-услуга', price: 1 })
+      .expect(403);
+  });
+
   it('GET /permissions/check → false', async () => {
     const res = await request(app)
       .get('/permissions/check?permission=parts.view_purchase_price')

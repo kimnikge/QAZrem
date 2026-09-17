@@ -50,12 +50,14 @@ export function CashAccountsTab({ isAdmin }: Props) {
       <div style={{ borderRight: '1px solid var(--border)', paddingRight: 8 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
           <strong style={{ fontSize: 14 }}>Кассы</strong>
-          <div style={{ display: 'flex', gap: 4 }}>
-            <button onClick={() => setShowOperation('income')} className="btn-icon" title="Приход" style={{ color: '#22c55e' }}><TrendingUp size={16} /></button>
-            <button onClick={() => setShowOperation('expense')} className="btn-icon" title="Расход" style={{ color: '#ef4444' }}><TrendingDown size={16} /></button>
-            <button onClick={() => setShowTransfer(true)} className="btn-icon" title="Перемещение"><ArrowRightLeft size={16} /></button>
-            <button onClick={() => setShowOperation('expense')} className="btn-icon" title="Изъятие из кассы" style={{ color: '#ef4444' }}><Minus size={16} /></button>
-          </div>
+          {isAdmin && (
+            <div style={{ display: 'flex', gap: 4 }}>
+              <button onClick={() => setShowOperation('income')} className="btn-icon" title="Приход" style={{ color: '#22c55e' }}><TrendingUp size={16} /></button>
+              <button onClick={() => setShowOperation('expense')} className="btn-icon" title="Расход" style={{ color: '#ef4444' }}><TrendingDown size={16} /></button>
+              <button onClick={() => setShowTransfer(true)} className="btn-icon" title="Перемещение"><ArrowRightLeft size={16} /></button>
+              <button onClick={() => setShowOperation('expense')} className="btn-icon" title="Изъятие из кассы" style={{ color: '#ef4444' }}><Minus size={16} /></button>
+            </div>
+          )}
         </div>
 
         {accounts.map(a => (
@@ -112,9 +114,13 @@ export function CashAccountsTab({ isAdmin }: Props) {
                 {accounts.find(a => a.id === selectedId)?.name || 'Касса'} — история
               </strong>
               <div style={{ display: 'flex', gap: 6 }}>
-                <button onClick={() => setShowOperation('income')} className="btn-primary" style={{ padding: '4px 10px', fontSize: 12, background: '#22c55e' }}>Приход</button>
-                <button onClick={() => setShowOperation('expense')} className="btn-primary" style={{ padding: '4px 10px', fontSize: 12, background: '#ef4444' }}>Расход</button>
-                <button onClick={() => setShowTransfer(true)} className="btn-primary" style={{ padding: '4px 10px', fontSize: 12 }}>Перемещение</button>
+                {isAdmin && (
+                  <>
+                    <button onClick={() => setShowOperation('income')} className="btn-primary" style={{ padding: '4px 10px', fontSize: 12, background: '#22c55e' }}>Приход</button>
+                    <button onClick={() => setShowOperation('expense')} className="btn-primary" style={{ padding: '4px 10px', fontSize: 12, background: '#ef4444' }}>Расход</button>
+                    <button onClick={() => setShowTransfer(true)} className="btn-primary" style={{ padding: '4px 10px', fontSize: 12 }}>Перемещение</button>
+                  </>
+                )}
               </div>
             </div>
             {transactions.length === 0 ? (

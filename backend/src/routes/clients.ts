@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { pool } from '../db/pool.js';
 import { NotFoundError } from '../lib/errors.js';
 import { buildPatchQuery } from '../lib/query-builder.js';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, requireRole } from '../middleware/auth.js';
 
 export const clientsRouter = Router();
 
@@ -44,7 +44,7 @@ clientsRouter.get('/:id', async (req, res, next) => {
   }
 });
 
-clientsRouter.post('/', async (req, res, next) => {
+clientsRouter.post('/', requireRole('admin', 'reception'), async (req, res, next) => {
   try {
     const input = createClientSchema.parse(req.body);
     const result = await pool.query(
@@ -59,7 +59,7 @@ clientsRouter.post('/', async (req, res, next) => {
   }
 });
 
-clientsRouter.patch('/:id', async (req, res, next) => {
+clientsRouter.patch('/:id', requireRole('admin', 'reception'), async (req, res, next) => {
   try {
     const { id } = req.params;
     const input = createClientSchema.partial().parse(req.body);

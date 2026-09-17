@@ -167,10 +167,20 @@ describe('Полный сценарий: заказ → кассы → закр�
     it('получает список запчастей и услуг', async () => {
       const services = await request(app).get('/services').set(auth(adminToken)).expect(200);
 
-      expect(services.body.length).toBeGreaterThan(0);
-
-      // Берём первую услугу
-      if (services.body.length > 0) serviceId = services.body[0].id;
+      // Свежая БД может не иметь услуг — создаём собственную фикстуру
+      if (services.body.length === 0) {
+        await request(app)
+          .post('/services')
+          .set(auth(adminToken))
+          .send({ name: `TEST-услуга-${Date.now()}`, price: 3000, master_commission_pct: 50 })
+          .expect(201);
+        const again = await request(app).get('/services').set(auth(adminToken)).expect(200);
+        expect(again.body.length).toBeGreaterThan(0);
+        serviceId = again.body[0].id;
+      } else {
+        // Берём первую услугу
+        serviceId = services.body[0].id;
+      }
 
       // Своя запчасть-фикстура с гарантированным остатком и партией —
       // не полагаемся на состояние общей БД (тест был флаки: выбор

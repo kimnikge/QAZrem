@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { pool } from '../db/pool.js';
 import { BadRequestError } from '../lib/errors.js';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, requireRole } from '../middleware/auth.js';
 
 export const transfersRouter = Router();
 transfersRouter.use(requireAuth);
@@ -24,8 +24,8 @@ transfersRouter.get('/', async (_req, res, next) => {
   } catch (error) { next(error); }
 });
 
-// POST /transfers — выполнить перемещение
-transfersRouter.post('/', async (req, res, next) => {
+// POST /transfers — выполнить перемещение (только админ — финансовая операция)
+transfersRouter.post('/', requireRole('admin'), async (req, res, next) => {
   const dbClient = await pool.connect();
   try {
     const { from_account_id, to_account_id, amount, comment } = z.object({

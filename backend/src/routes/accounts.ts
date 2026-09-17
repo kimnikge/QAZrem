@@ -52,8 +52,8 @@ accountsRouter.patch('/:id', requireRole('admin'), async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
-// POST /accounts/:id/operations — ручной приход/расход по кассе
-accountsRouter.post('/:id/operations', async (req, res, next) => {
+// POST /accounts/:id/operations — ручной приход/расход по кассе (только админ)
+accountsRouter.post('/:id/operations', requireRole('admin'), async (req, res, next) => {
   const dbClient = await pool.connect();
   try {
     const accountId = Number(req.params.id);

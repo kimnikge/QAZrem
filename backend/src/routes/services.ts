@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { pool } from '../db/pool.js';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, requireRole } from '../middleware/auth.js';
 
 export const servicesRouter = Router();
 
@@ -26,7 +26,7 @@ const serviceSchema = z.object({
   master_commission_pct: z.number().min(0).max(100).default(50),
 });
 
-servicesRouter.post('/', async (req, res, next) => {
+servicesRouter.post('/', requireRole('admin'), async (req, res, next) => {
   try {
     const { name, price, master_commission_pct } = serviceSchema.parse(req.body);
     const result = await pool.query(
@@ -39,8 +39,8 @@ servicesRouter.post('/', async (req, res, next) => {
   }
 });
 
-// PATCH /services/:id — обновить услугу
-servicesRouter.patch('/:id', async (req, res, next) => {
+// PATCH /services/:id — обновить услугу (только админ)
+servicesRouter.patch('/:id', requireRole('admin'), async (req, res, next) => {
   try {
     const { id } = req.params;
     const { name, price, master_commission_pct } = serviceSchema.parse(req.body);
@@ -57,8 +57,8 @@ servicesRouter.patch('/:id', async (req, res, next) => {
   }
 });
 
-// DELETE /services/:id
-servicesRouter.delete('/:id', async (req, res, next) => {
+// DELETE /services/:id (только админ)
+servicesRouter.delete('/:id', requireRole('admin'), async (req, res, next) => {
   try {
     const { id } = req.params;
     await pool.query('DELETE FROM services WHERE id = $1', [id]);

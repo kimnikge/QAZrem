@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { pool } from '../db/pool.js';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, requireRole } from '../middleware/auth.js';
 
 export const orderGroupsRouter = Router();
 
@@ -28,7 +28,7 @@ const createGroupSchema = z.object({
   name: z.string().min(1, 'Название группы обязательно')
 });
 
-orderGroupsRouter.post('/', async (req, res, next) => {
+orderGroupsRouter.post('/', requireRole('admin'), async (req, res, next) => {
   try {
     const { name } = createGroupSchema.parse(req.body);
     const result = await pool.query(
@@ -41,8 +41,8 @@ orderGroupsRouter.post('/', async (req, res, next) => {
   }
 });
 
-// PATCH /order-groups/:id — переименовать группу
-orderGroupsRouter.patch('/:id', async (req, res, next) => {
+// PATCH /order-groups/:id — переименовать группу (только админ)
+orderGroupsRouter.patch('/:id', requireRole('admin'), async (req, res, next) => {
   try {
     const { id } = req.params;
     const { name } = createGroupSchema.parse(req.body);
@@ -59,8 +59,8 @@ orderGroupsRouter.patch('/:id', async (req, res, next) => {
   }
 });
 
-// DELETE /order-groups/:id
-orderGroupsRouter.delete('/:id', async (req, res, next) => {
+// DELETE /order-groups/:id (только админ)
+orderGroupsRouter.delete('/:id', requireRole('admin'), async (req, res, next) => {
   try {
     const { id } = req.params;
     await pool.query('DELETE FROM order_groups WHERE id = $1', [id]);

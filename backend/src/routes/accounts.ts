@@ -156,7 +156,7 @@ accountsRouter.get('/:id/transactions', async (req, res, next) => {
       [id]
     );
 
-    // Объединить и вычислить running balance
+    // Объединить и вычислить running balance (от старых к новым)
     const all = [...payments.rows, ...transfersIn.rows, ...transfersOut.rows, ...manualOps.rows]
       .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 
@@ -166,6 +166,8 @@ accountsRouter.get('/:id/transactions', async (req, res, next) => {
       return { ...t, balance: String(balance) };
     });
 
-    res.json({ account: acc.rows[0], transactions });
+    // Новые записи сверху — иначе свежие платежи и перемещения
+    // оказываются внизу длинного списка и «теряются» из вида
+    res.json({ account: acc.rows[0], transactions: transactions.reverse() });
   } catch (error) { next(error); }
 });

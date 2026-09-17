@@ -28,6 +28,13 @@ export interface PaymentRow {
 }
 
 /**
+ * Платежи от этой суммы и выше обязаны закрываться разбивкой по кассам
+ * (splits, сумма которых в точности равна сумме платежа).
+ * ⚠️ Синхронизировать с frontend/src/components/OrderPaymentsCard.tsx
+ */
+export const SPLIT_REQUIRED_MIN_AMOUNT = 10_000;
+
+/**
  * Создать платёж с проверками бизнес-правил:
  * - Заказ не финальный
  * - Предоплата ≤ стоимость заказа
@@ -57,6 +64,22 @@ export async function createPayment(input: CreatePaymentInput): Promise<PaymentR
 
     if (input.is_prepayment && input.amount > Number(cost)) {
       throw new BadRequestError('Предоплата не может превышать стоимость заказа');
+    }
+
+    // Валидация разбивки по кассам ДО любых записей:
+    // - крупные платежи обязаны иметь splits;
+    // - если splits переданы — их сумма должна в точности сходиться с суммой платежа.
+    const splits = input.splits ?? [];
+    const splitsTotal = splits.reduce((sum, s) => sum + s.amount, 0);
+    if (input.amount >= SPLIT_REQUIRED_MIN_AMOUNT && splits.length === 0) {
+      throw new BadRequestError(
+        `Для платежей от ${SPLIT_REQUIRED_MIN_AMOUNT} ₸ обязательна разбивка по кассам`,
+      );
+    }
+    if (splits.length > 0 && Math.abs(splitsTotal - input.amount) > 0.01) {
+      throw new BadRequestError(
+        `Сумма разбивки (${splitsTotal}) не совпадает с суммой платежа (${input.amount})`,
+      );
     }
 
     // Создаём платёж
@@ -89,14 +112,7 @@ export async function createPayment(input: CreatePaymentInput): Promise<PaymentR
     }
 
     // Сплитование по кассам
-    const splits = input.splits ?? [];
     if (splits.length > 0) {
-      const splitsTotal = splits.reduce((sum, s) => sum + s.amount, 0);
-      if (Math.abs(splitsTotal - input.amount) > 0.01) {
-        throw new BadRequestError(
-          `Сумма разбивки (${splitsTotal}) не совпадает с суммой платежа (${input.amount})`,
-        );
-      }
       const paymentId = payment.rows[0].id;
       for (const s of splits) {
         await dbClient.query(

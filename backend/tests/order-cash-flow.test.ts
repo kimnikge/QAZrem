@@ -350,8 +350,8 @@ describe('Полный сценарий: заказ → кассы → закр�
       );
       expect(manualExpenses.length).toBeGreaterThanOrEqual(1);
 
-      // Проверяем, что баланс = сумма всех приходов - сумма всех расходов
-      const lastTx = res.body.transactions[res.body.transactions.length - 1];
+      // История теперь от новых к старым: новейшая строка — первая
+      const lastTx = res.body.transactions[0];
       const expectedBalance =
         res.body.transactions.reduce(
           (sum: number, t: any) => sum + Number(t.income) - Number(t.outcome),
@@ -590,7 +590,8 @@ describe('Полный сценарий: заказ → кассы → закр�
         (sum: number, t: any) => sum + Number(t.income) - Number(t.outcome),
         0
       );
-      const lastBalance = Number(txs[txs.length - 1].balance);
+      // История от новых к старым — новейшая (первая) строка несёт итоговый баланс
+      const lastBalance = Number(txs[0].balance);
 
       expect(computed).toBe(lastBalance);
     });

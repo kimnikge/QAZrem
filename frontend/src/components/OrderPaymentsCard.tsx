@@ -11,6 +11,9 @@ interface Props {
   onError: (msg: string) => void;
 }
 
+// ⚠️ Синхронизировать с SPLIT_REQUIRED_MIN_AMOUNT в backend/src/services/payment.service.ts
+const SPLIT_REQUIRED_MIN_AMOUNT = 10_000;
+
 export function OrderPaymentsCard({ order, settings, userRole, onRefresh, onError }: Props) {
   const [showForm, setShowForm] = useState(false);
   const [amount, setAmount] = useState('');
@@ -21,6 +24,11 @@ export function OrderPaymentsCard({ order, settings, userRole, onRefresh, onErro
   const [splitRows, setSplitRows] = useState<Array<{ account_id: number; amount: number }>>([]);
   const [editingPaymentId, setEditingPaymentId] = useState<number | null>(null);
   const splitsTotal = splitRows.reduce((s, r) => s + r.amount, 0);
+  const paymentAmount = Math.round(Number(amount) || 0);
+  // Крупные платежи обязаны быть полностью разнесены по кассам
+  const splitRequired = paymentAmount >= SPLIT_REQUIRED_MIN_AMOUNT;
+  const splitsComplete = splitsTotal === paymentAmount;
+  const canSubmit = !!amount && !!method && (!splitRequired || splitsComplete);
 
   useEffect(() => { getAccounts().then(setAccounts).catch(() => {}); }, []);
   useEffect(() => {
@@ -33,12 +41,14 @@ export function OrderPaymentsCard({ order, settings, userRole, onRefresh, onErro
     if (!amount || !method) return;
     setSaving(true);
     try {
-      const paymentAmount = Math.round(Number(amount));
       const validSplits = splitRows.filter(r => r.amount > 0);
+      if (splitRequired && !splitsComplete) {
+        throw new Error(`Распределите всю сумму по кассам: ${paymentAmount} ₸`);
+      }
       await createPayment({
         order_id: order.id, amount: paymentAmount,
         payment_method_id: method, is_prepayment: prepayment,
-        splits: validSplits.length > 0 && splitsTotal === paymentAmount ? validSplits : undefined
+        splits: validSplits.length > 0 && splitsComplete ? validSplits : undefined
       });
       setShowForm(false); setAmount(''); setPrepayment(false);
       setSplitRows(accounts.map(a => ({ account_id: a.id, amount: 0 })));
@@ -95,7 +105,7 @@ export function OrderPaymentsCard({ order, settings, userRole, onRefresh, onErro
               <input type="checkbox" id="prepay" checked={prepayment} onChange={e => setPrepayment(e.target.checked)} />
               <label htmlFor="prepay" style={{ fontSize: 13, color: '#5f6368', cursor: 'pointer' }}>Предоплата</label>
             </div>
-            <button className="btn-primary" onClick={handleAdd} disabled={saving || !amount || !method} style={{ padding: '8px 14px', fontSize: 13 }}>
+            <button className="btn-primary" onClick={handleAdd} disabled={saving || !canSubmit} title={splitRequired && !splitsComplete ? 'Распределите всю сумму по кассам' : ''} style={{ padding: '8px 14px', fontSize: 13 }}>
               {saving ? '...' : 'Провести'}
             </button>
           </div>
@@ -125,8 +135,13 @@ export function OrderPaymentsCard({ order, settings, userRole, onRefresh, onErro
                 </div>
               ))}
               {splitsTotal > 0 && (
-                <div style={{ fontSize: 11, color: splitsTotal === Math.round(Number(amount) || 0) ? '#22c55e' : '#ef4444', marginTop: 4 }}>
-                  Распределено: {splitsTotal} / {Math.round(Number(amount) || 0)} ₸
+                <div style={{ fontSize: 11, color: splitsComplete ? '#22c55e' : '#ef4444', marginTop: 4 }}>
+                  Распределено: {splitsTotal} / {paymentAmount} ₸ {splitsComplete ? '' : `(осталось ${paymentAmount - splitsTotal} ₸)`}
+                </div>
+              )}
+              {splitRequired && !splitsComplete && (
+                <div style={{ fontSize: 11, color: '#ef4444', marginTop: 4 }}>
+                  Для платежей от {SPLIT_REQUIRED_MIN_AMOUNT.toLocaleString('ru-RU')} ₸ обязательна полная разбивка по кассам
                 </div>
               )}
             </div>

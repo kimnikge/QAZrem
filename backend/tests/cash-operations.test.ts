@@ -252,12 +252,12 @@ describe('Кассы: история операций', () => {
     const outcomes = res.body.transactions.filter((t: any) => t.type === 'manual_expense' || t.type === 'expense');
     expect(outcomes.length).toBeGreaterThanOrEqual(1);
 
-    // Самая свежая транзакция — последняя в отсортированном по возрастанию массиве
-    const lastTx = res.body.transactions[res.body.transactions.length - 1];
+    // История от новых к старым: самая свежая транзакция — ПЕРВАЯ в массиве
+    const lastTx = res.body.transactions[0];
     expect(lastTx.description).toBe('Финальное пополнение');
     expect(Number(lastTx.income)).toBe(25000);
 
-    // Баланс последней транзакции должен быть > 0 (накопительный)
+    // Баланс новейшей транзакции должен быть > 0 (накопительный)
     expect(Number(lastTx.balance)).toBeGreaterThan(0);
   });
 
@@ -269,8 +269,8 @@ describe('Кассы: история операций', () => {
 
     const withDescription = res.body.transactions.filter((t: any) => t.description);
     expect(withDescription.length).toBeGreaterThan(0);
-    // Последняя транзакция (самая свежая) — последняя в массиве
-    const lastDesc = res.body.transactions[res.body.transactions.length - 1].description.toLowerCase();
+    // История от новых к старым: самая свежая транзакция — первая в массиве
+    const lastDesc = res.body.transactions[0].description.toLowerCase();
     expect(lastDesc).toContain('пополнение');
   });
 });

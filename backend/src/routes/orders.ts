@@ -144,13 +144,7 @@ ordersRouter.get('/', parsePagination(), async (req, res, next) => {
       LEFT JOIN users u ON u.id = o.master_id
       LEFT JOIN order_groups og ON og.id = o.group_id
       LEFT JOIN locations l ON l.id = o.location_id
-      LEFT JOIN LATERAL (
-        SELECT uh.user_id, us.name
-        FROM order_history uh
-        LEFT JOIN users us ON us.id = uh.user_id
-        WHERE uh.order_id = o.id AND uh.from_status_id IS NULL
-        ORDER BY uh.created_at LIMIT 1
-      ) cu ON true`;
+      LEFT JOIN users cu ON cu.id = o.created_by`;
 
     // Основной запрос
     const sql = `SELECT ${selectClause} FROM ${fromClause} ${whereClause}
@@ -279,12 +273,7 @@ ordersRouter.get('/:id([0-9]+)', async (req, res, next) => {
       LEFT JOIN users u ON u.id = o.master_id
       LEFT JOIN order_groups og ON og.id = o.group_id
       LEFT JOIN locations l ON l.id = o.location_id
-      LEFT JOIN LATERAL (
-        SELECT us.name FROM order_history uh
-        LEFT JOIN users us ON us.id = uh.user_id
-        WHERE uh.order_id = o.id AND uh.from_status_id IS NULL
-        ORDER BY uh.created_at LIMIT 1
-      ) cu ON true
+      LEFT JOIN users cu ON cu.id = o.created_by
       WHERE o.id = $1`,
       [id]
     );
@@ -639,10 +628,10 @@ ordersRouter.delete('/:id([0-9]+)/parts/:opId([0-9]+)', requireRole('admin'), as
           'UPDATE part_batches SET current_quantity = current_quantity + $1 WHERE id = $2',
           [quantity_used, batch_id]
         );
+      } else {
+        // Легаси-запись без партии: триггер не сработает — правим остаток вручную
+        await dbClient.query('UPDATE parts SET quantity = quantity + $1 WHERE id = $2', [quantity_used, part_id]);
       }
-
-      // Возвращаем на склад
-      await dbClient.query('UPDATE parts SET quantity = quantity + $1 WHERE id = $2', [quantity_used, part_id]);
 
       // Возвращаем остаток на локацию «Общий склад»
       await depositPartLocation(dbClient, part_id, null, quantity_used);

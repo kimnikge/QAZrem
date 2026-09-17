@@ -130,8 +130,8 @@ export async function createOrder(
     const orderResult = await dbClient.query(
       `INSERT INTO orders (device_id, master_id, status_id, issue_description, deadline, priority, source,
         estimated_cost, discount, master_commission_pct, group_id, location_id,
-        password, face_id, completeness, condition, appearance, manager_notes, order_type, image_url)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+        password, face_id, completeness, condition, appearance, manager_notes, order_type, image_url, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
        RETURNING id`,
       [
         deviceId, masterId || null, newStatusId,
@@ -143,6 +143,7 @@ export async function createOrder(
         input.completeness || null, input.condition || null,
         input.appearance || null, input.manager_notes || null,
         input.order_type || 'paid', input.image_url || null,
+        createdByUserId,
       ],
     );
     const orderId: number = orderResult.rows[0].id;
@@ -337,7 +338,7 @@ export async function assignPartToOrder(
       );
     }
 
-    await dbClient.query('UPDATE parts SET quantity = quantity - $1 WHERE id = $2', [quantity, partId]);
+    // parts.quantity пересчитывается триггером из SUM(part_batches)
 
     // Снимаем остаток по локациям
     await withdrawPartLocations(dbClient, partId, quantity);
@@ -400,7 +401,7 @@ async function writeoffParts(
       );
     }
 
-    await client.query('UPDATE parts SET quantity = quantity - $1 WHERE id = $2', [part.quantity, part.part_id]);
+    // parts.quantity пересчитывается триггером из SUM(part_batches)
 
     // Снимаем остаток по локациям
     await withdrawPartLocations(client, part.part_id, part.quantity);

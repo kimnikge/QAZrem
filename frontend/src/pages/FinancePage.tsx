@@ -43,7 +43,9 @@ export function FinancePage() {
   useEffect(() => { if (tab === 'refunds') getRefunds().then(setRefunds).catch(console.error); }, [tab]);
 
   useEffect(() => {
-    if (tab === 'accounts') return;
+    // Период применяется только к «Общему отчёту» и «Расчёту мастерам».
+    // «Кассы» и «Возвраты» показывают данные за всё время.
+    if (tab === 'accounts' || tab === 'refunds') return;
     setLoading(true);
     const { from, to } = periodMode === 'custom' ? { from: customFrom, to: customTo } : getMonthRange(selMonth, selYear);
     if (tab === 'overview') {
@@ -77,12 +79,14 @@ export function FinancePage() {
         )}
       </div>
 
-      {/* Period selector (shared) */}
-      <FinancePeriodSelector
-        mode={periodMode} onModeChange={setPeriodMode}
-        month={selMonth} onMonthChange={setSelMonth} year={selYear} onYearChange={setSelYear}
-        from={customFrom} onFromChange={setCustomFrom} to={customTo} onToChange={setCustomTo}
-      />
+      {/* Period selector — только для вкладок, где период реально применяется */}
+      {(tab === 'overview' || tab === 'payouts') && (
+        <FinancePeriodSelector
+          mode={periodMode} onModeChange={setPeriodMode}
+          month={selMonth} onMonthChange={setSelMonth} year={selYear} onYearChange={setSelYear}
+          from={customFrom} onFromChange={setCustomFrom} to={customTo} onToChange={setCustomTo}
+        />
+      )}
 
       {tab === 'overview' && report && <FinanceOverviewTab report={report} onOpenModal={setModal} />}
       {tab === 'overview' && loading && <div className="loading">Загрузка...</div>}

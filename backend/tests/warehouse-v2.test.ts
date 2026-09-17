@@ -138,19 +138,27 @@ describe('Parts v2: новые поля, фильтры, SKU-авто, удал�
   });
 
   it('НЕ удаляет запчасть использованную в заказе', async () => {
-    // Берём запчасть которая точно привязана к заказу (создана в beforeAll + назначена)
-    // Проверяем что она участвует в заказе
-    const check = await request(app)
-      .get(`/orders/${testOrderId}`)
-      .set(auth());
-    expect(check.status).toBe(200);
+    // Назначаем запчасть на заказ — теперь она использована
+    await request(app)
+      .post(`/orders/${testOrderId}/parts`)
+      .set(auth())
+      .send({ part_id: testPartId, quantity: 1 })
+      .expect(200);
 
-    // Пытаемся удалить — должно быть отказано
+    // Пытаемся удалить — приложение должно отказать (400: использована в заказах)
     const delRes = await request(app)
       .delete(`/parts/${testPartId}`)
       .set(auth());
-    // Либо 400 (использована) либо 500 (FK violation от part_movements)
-    expect([400, 500]).toContain(delRes.status);
+    expect(delRes.status).toBe(400);
+
+    // Возвращаем запчасть на склад, чтобы не ломать следующие тесты (FIFO и др.)
+    const orderDetail = await request(app).get(`/orders/${testOrderId}`).set(auth());
+    const op = orderDetail.body.parts.find((p: any) => p.part_id === testPartId);
+    expect(op).toBeTruthy();
+    await request(app)
+      .delete(`/orders/${testOrderId}/parts/${op.id}`)
+      .set(auth())
+      .expect(200);
   });
 });
 

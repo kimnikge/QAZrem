@@ -109,7 +109,8 @@ async function syncCategoryLinks(
       [partId, primary, uniqueIds]
     );
   }
-  await dbClient.query('UPDATE parts SET category_id = $1 WHERE id = $2', [primary, partId]);
+  // parts.category_id обновляет БД-триггер trg_pcl_sync_category
+  // (основная категория всегда следует за part_category_links)
 }
 
 // Схема перемещения между локациями
@@ -633,11 +634,7 @@ partsRouter.post('/movement', requirePermission('parts.receive'), async (req, re
         batchId = newBatch.rows[0].id;
       }
 
-      // Увеличиваем остаток
-      await dbClient.query(
-        'UPDATE parts SET quantity = quantity + $1 WHERE id = $2',
-        [input.quantity, input.part_id]
-      );
+      // parts.quantity пересчитывается триггером из SUM(part_batches)
 
       // Остаток по локации (без локации → «Общий склад»)
       await depositPartLocation(dbClient, input.part_id, input.location_id || null, input.quantity);
@@ -697,11 +694,7 @@ partsRouter.post('/writeoff', requirePermission('parts.writeoff'), async (req, r
         (missing) => `Несоответствие остатков: недостаточно в партиях (не хватает ${missing}шт). Обратитесь к админу.`,
       );
 
-      // Уменьшаем общий остаток запчасти
-      await dbClient.query(
-        'UPDATE parts SET quantity = quantity - $1 WHERE id = $2',
-        [input.quantity, input.part_id]
-      );
+      // parts.quantity пересчитывается триггером из SUM(part_batches)
 
       // Снимаем остаток по локациям
       await withdrawPartLocations(dbClient, input.part_id, input.quantity);
@@ -847,10 +840,7 @@ partsRouter.post('/correction', requireRole('admin'), async (req, res, next) => 
         await withdrawPartLocations(dbClient, input.part_id, -delta);
       }
 
-      await dbClient.query(
-        'UPDATE parts SET quantity = $1 WHERE id = $2',
-        [target, input.part_id]
-      );
+      // parts.quantity пересчитывается триггером из SUM(part_batches)
 
       return {
         noop: false as const,

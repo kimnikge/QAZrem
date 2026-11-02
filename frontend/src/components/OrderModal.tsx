@@ -5,16 +5,24 @@ import { type Order, createPayment, updatePayment, getAccounts, type CompanyAcco
 import { useOrderModal } from '../hooks/useOrderModal';
 import { OrderPartsSection } from './OrderPartsSection';
 import { STATUS_LABELS } from '../constants';
+import { useAuth } from '../context/AuthContext';
 
 interface Props { orderId: number; preload?: Order; onClose: () => void; onOrderUpdated?: () => void; }
 
 export function OrderModal({ orderId, preload, onClose, onOrderUpdated }: Props) {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const m = useOrderModal({ orderId, preload, onOrderUpdated });
 
   const order = m.order;
+  const isFinal = order?.status_slug === 'completed' || order?.status_slug === 'cancelled';
+  const canEditOrder = (user?.role === 'admin' || user?.role === 'master') && !isFinal;
+  const canAddPayment = !isFinal && (user?.role === 'admin' || user?.role === 'reception');
+  const canEditMethod = user?.role === 'admin' || user?.role === 'reception';
   const finalCost = order ? Math.max(0, Math.round(Number(order.cost)) - Math.round(Number(order.discount))) : 0;
-  const totalPaid = order ? order.payments.reduce((s, p) => s + Math.round(Number(p.amount)), 0) : 0;
+  const totalPaid = order
+    ? order.payments.filter(p => !p.refunded_at).reduce((s, p) => s + Math.round(Number(p.amount)), 0)
+    : 0;
   const remaining = finalCost - totalPaid;
 
   // Payment split state
@@ -64,11 +72,11 @@ export function OrderModal({ orderId, preload, onClose, onOrderUpdated }: Props)
             </div>
             <div className="modal-header-right">
               <button className="modal-btn-icon" onClick={() => navigate(`/print-order/${order.id}`)} title="Печать"><Printer size={16} /></button>
-              {m.editing ? (
+              {canEditOrder && (m.editing ? (
                 <button className="modal-btn-icon" onClick={m.handleSave} disabled={m.saving} title="Сохранить" style={{ color: 'var(--primary)' }}><Save size={16} /></button>
               ) : (
                 <button className="modal-btn-icon" onClick={() => m.setEditing(true)} title="Редактировать"><Edit3 size={16} /></button>
-              )}
+              ))}
               <button className="modal-btn-icon" onClick={onClose} title="Закрыть"><X size={18} /></button>
             </div>
           </div>
@@ -132,10 +140,10 @@ export function OrderModal({ orderId, preload, onClose, onOrderUpdated }: Props)
               <div className="modal-section"><div className="modal-field"><span className="modal-label">Комментарий</span><span className="modal-value" style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>{order.internal_comment}</span></div></div>
             ) : null}
 
-            <OrderPartsSection orderId={order.id} initialParts={order.parts} initialServices={order.services} onRefresh={m.refresh} onError={m.setError} />
+            <OrderPartsSection orderId={order.id} initialParts={order.parts} initialServices={order.services} readOnly={isFinal} onRefresh={m.refresh} onError={m.setError} />
 
-            {/* Блок оплаты — если есть остаток */}
-            {remaining > 0 && !m.editing && (
+            {/* Блок оплаты — если есть остаток и роль позволяет принимать платежи */}
+            {remaining > 0 && !m.editing && canAddPayment && (
               <div className="modal-section" style={{
                 border: order.status_slug === 'ready' ? '2px solid #22c55e' : '1px solid var(--border)',
                 background: order.status_slug === 'ready' ? '#f0fdf4' : 'var(--bg)',
@@ -228,7 +236,7 @@ export function OrderModal({ orderId, preload, onClose, onOrderUpdated }: Props)
                       ) : (
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                           {p.payment_method_name} {p.is_prepayment ? '(аванс)' : ''}
-                          {!p.refunded_at && (
+                          {!p.refunded_at && canEditMethod && (
                             <button onClick={() => setEditingPaymentId(editingPaymentId === p.id ? null : p.id)}
                               style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--primary)', padding: 0, display: 'inline-flex', verticalAlign: 'middle' }}
                               title="Сменить способ оплаты">
@@ -250,7 +258,7 @@ export function OrderModal({ orderId, preload, onClose, onOrderUpdated }: Props)
             )}
           </div>
 
-          {m.statuses.length > 0 && (
+          {canEditOrder && m.statuses.length > 0 && (
             <div className="modal-footer">{m.statuses.map(s => <button key={s.slug} className="btn-status" onClick={() => m.handleStatus(s.slug)}>{STATUS_LABELS[s.slug] || s.name}</button>)}</div>
           )}
         </>) : null}

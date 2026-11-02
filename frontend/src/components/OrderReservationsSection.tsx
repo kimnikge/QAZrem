@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Lock, XCircle } from 'lucide-react';
 import { getReservations, reservePart, cancelReservation, type Reservation } from '../api/orders';
 import { getParts, type Part } from '../api/parts';
+import { useAuth } from '../context/AuthContext';
 
 const STATUS_LABELS: Record<string, string> = {
   active: 'Активен',
@@ -14,7 +15,11 @@ const STATUS_LABELS: Record<string, string> = {
  * Резервы запчастей под заказ (ТЗ Блок 6.1: active → used при списании).
  * Резерв уменьшает доступный остаток, но не списывает со склада.
  */
-export function OrderReservationsSection({ orderId }: { orderId: number }) {
+export function OrderReservationsSection({ orderId, readOnly = false }: { orderId: number; readOnly?: boolean }) {
+  const { user } = useAuth();
+  // Резервировать могут admin и master; снимать — только admin.
+  const canReserve = !readOnly && (user?.role === 'admin' || user?.role === 'master');
+  const canCancel = !readOnly && user?.role === 'admin';
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [parts, setParts] = useState<Part[]>([]);
   const [partId, setPartId] = useState<number>(0);
@@ -83,6 +88,7 @@ export function OrderReservationsSection({ orderId }: { orderId: number }) {
       ) : (
         <>
           {/* Форма резервирования */}
+          {canReserve && (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'end', marginBottom: 12 }}>
             <div style={{ flex: 1, minWidth: 220 }}>
               <label style={{ fontSize: 12, color: '#5f6368', display: 'block', marginBottom: 2 }}>Запчасть</label>
@@ -117,6 +123,7 @@ export function OrderReservationsSection({ orderId }: { orderId: number }) {
               {busy ? '...' : 'Зарезервировать'}
             </button>
           </div>
+          )}
           {error && <p style={{ color: '#ef4444', fontSize: 13, margin: '0 0 8px' }}>{error}</p>}
 
           {/* Список резервов */}
@@ -152,7 +159,7 @@ export function OrderReservationsSection({ orderId }: { orderId: number }) {
                       </span>
                     </td>
                     <td>
-                      {r.status === 'active' && (
+                      {canCancel && r.status === 'active' && (
                         <button
                           onClick={() => handleCancel(r.id)}
                           disabled={busy}

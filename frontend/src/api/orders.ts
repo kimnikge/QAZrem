@@ -4,6 +4,8 @@ export type Order = {
   id: number; device_id: number; master_id: number | null;
   status_id: number; issue_description: string; diagnosis: string | null;
   cost: string; estimated_cost: string; discount: string; prepaid: string;
+  /** Сумма не возвращённых платежей по заказу */
+  paid_total: string;
   deadline: string | null; status_deadline: string | null;
   priority: string; source: string | null; internal_comment: string | null;
   master_commission_pct: string;

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { pool } from '../db/pool.js';
+import { withTransaction } from '../db/withTransaction.js';
 import { BadRequestError, NotFoundError } from '../lib/errors.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { createPayment, deletePayment, updatePaymentMethod } from '../services/payment.service.js';
@@ -68,55 +69,66 @@ const refundSchema = z.object({
 });
 
 paymentsRouter.patch('/:id/refund', requireRole('admin'), async (req, res, next) => {
-  const dbClient = await pool.connect();
   try {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) throw new BadRequestError('Некорректный ID платежа');
     const { reason } = refundSchema.parse(req.body);
 
-    const payResult = await dbClient.query(
-      `SELECT p.*, o.cost, d.client_id
-       FROM payments p
-       JOIN orders o ON o.id = p.order_id
-       JOIN devices d ON d.id = o.device_id
-       WHERE p.id = $1`,
-      [id]
-    );
-    if (payResult.rows.length === 0) throw new NotFoundError('Платёж');
-    const pay = payResult.rows[0];
-
-    if (pay.refunded_at) {
-      throw new BadRequestError('Платёж уже возвращён');
-    }
-
-    await dbClient.query('BEGIN');
-
-    // Помечаем платёж как возвращённый
-    await dbClient.query(
-      `UPDATE payments SET refunded_at = NOW(), refund_reason = $1 WHERE id = $2`,
-      [reason || null, id]
-    );
-
-    // Если предоплата — уменьшаем prepaid
-    if (pay.is_prepayment) {
-      await dbClient.query(
-        'UPDATE orders SET prepaid = GREATEST(0, prepaid - $1) WHERE id = $2',
-        [pay.amount, pay.order_id]
+    await withTransaction(async (tx) => {
+      const payResult = await tx.query(
+        `SELECT p.*, o.cost, d.client_id
+         FROM payments p
+         JOIN orders o ON o.id = p.order_id
+         JOIN devices d ON d.id = o.device_id
+         WHERE p.id = $1
+         FOR UPDATE OF p`,
+        [id]
       );
-    } else {
-      await dbClient.query(
-        'UPDATE clients SET total_spent = GREATEST(0, total_spent - $1) WHERE id = $2',
-        [pay.amount, pay.client_id]
-      );
-    }
+      if (payResult.rows.length === 0) throw new NotFoundError('Платёж');
+      const pay = payResult.rows[0];
 
-    await dbClient.query('COMMIT');
+      if (pay.refunded_at) {
+        throw new BadRequestError('Платёж уже возвращён');
+      }
+
+      // Сторнируем деньги с касс по сплитам платежа
+      const splits = await tx.query(
+        'SELECT account_id, amount FROM payment_splits WHERE payment_id = $1',
+        [id]
+      );
+      for (const s of splits.rows) {
+        await tx.query(
+          'UPDATE company_accounts SET balance = balance - $1 WHERE id = $2',
+          [s.amount, s.account_id]
+        );
+      }
+
+      // Помечаем платёж как возвращённый
+      await tx.query(
+        `UPDATE payments SET refunded_at = NOW(), refund_reason = $1 WHERE id = $2`,
+        [reason || null, id]
+      );
+
+      // Предоплата: уменьшаем orders.prepaid
+      if (pay.is_prepayment) {
+        await tx.query(
+          'UPDATE orders SET prepaid = GREATEST(0, prepaid - $1) WHERE id = $2',
+          [pay.amount, pay.order_id]
+        );
+      }
+
+      // total_spent учитывает только доплаты (см. createPayment)
+      if (!pay.is_prepayment) {
+        await tx.query(
+          'UPDATE clients SET total_spent = GREATEST(0, total_spent - $1) WHERE id = $2',
+          [pay.amount, pay.client_id]
+        );
+      }
+    });
+
     res.json({ success: true });
   } catch (error) {
-    await dbClient.query('ROLLBACK');
     next(error);
-  } finally {
-    dbClient.release();
   }
 });
 

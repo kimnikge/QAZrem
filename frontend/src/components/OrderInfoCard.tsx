@@ -16,7 +16,9 @@ export function OrderInfoCard({ order, editing, editCost, onEditCost, editDiscou
   editDiagnosis, onEditDiagnosis, editComment, onEditComment, editGroupId, onEditGroupId, groups }: Props) {
 
   const finalCost = Math.max(0, Math.round(Number(order.cost)) - Math.round(Number(order.discount)));
-  const totalPaid = order.payments.reduce((s, p) => s + Math.round(Number(p.amount)), 0);
+  const totalPaid = order.payments
+    .filter(p => !p.refunded_at)
+    .reduce((s, p) => s + Math.round(Number(p.amount)), 0);
   const remaining = finalCost - totalPaid;
 
   return (

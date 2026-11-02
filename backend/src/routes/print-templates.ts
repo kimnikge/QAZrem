@@ -44,10 +44,25 @@ const AVAILABLE_VARIABLES = [
   { key: '#ПОДПИСЬ', label: 'Подпись (QAZRem CRM)', group: 'Прочие' },
 ];
 
+/** Экранирование пользовательских данных перед вставкой в HTML-шаблон */
+function escapeHtml(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function substitute(html: string, data: Record<string, string>): string {
   let result = html;
   for (const [key, value] of Object.entries(data)) {
-    result = result.split(key).join(value);
+    // Значения из БД (имя клиента, модель, название запчасти) — недоверенные.
+    // HTML-таблицы собираются отдельно и уже содержат экранированные ячейки.
+    const safeValue = key === '#ТАБЛИЦА-ЗАПЧАСТЕЙ' || key === '#ТАБЛИЦА-ПЛАТЕЖЕЙ'
+      ? value
+      : escapeHtml(value);
+    result = result.split(key).join(safeValue);
   }
   return result;
 }
@@ -142,14 +157,14 @@ printTemplatesRouter.get('/preview/:orderId', async (req, res, next) => {
     let partsTable = '';
     if (partsResult.rows.length > 0) {
       partsTable = '<table><thead><tr><th>Наименование</th><th>Кол-во</th><th>Цена</th></tr></thead><tbody>';
-      for (const p of partsResult.rows) partsTable += `<tr><td>${p.part_name}</td><td>${p.quantity_used}</td><td>${Math.round(Number(p.selling_price_at_moment))} ₸</td></tr>`;
+      for (const p of partsResult.rows) partsTable += `<tr><td>${escapeHtml(p.part_name)}</td><td>${p.quantity_used}</td><td>${Math.round(Number(p.selling_price_at_moment))} ₸</td></tr>`;
       partsTable += '</tbody></table>';
     } else partsTable = '<p style="color:#999">—</p>';
 
     let paymentsTable = '';
     if (paymentsResult.rows.length > 0) {
       paymentsTable = '<table><thead><tr><th>Сумма</th><th>Способ</th><th>Дата</th></tr></thead><tbody>';
-      for (const p of paymentsResult.rows) paymentsTable += `<tr><td>${Math.round(Number(p.amount))} ₸</td><td>${p.method_name}</td><td>${new Date(p.created_at).toLocaleDateString('ru-RU')}</td></tr>`;
+      for (const p of paymentsResult.rows) paymentsTable += `<tr><td>${Math.round(Number(p.amount))} ₸</td><td>${escapeHtml(p.method_name)}</td><td>${new Date(p.created_at).toLocaleDateString('ru-RU')}</td></tr>`;
       paymentsTable += '</tbody></table>';
     } else paymentsTable = '<p style="color:#999">—</p>';
 

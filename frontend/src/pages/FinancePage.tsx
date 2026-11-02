@@ -24,7 +24,9 @@ function getMonthRange(m: number, y: number) {
 export function FinancePage() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
-  const [tab, setTab] = useState<Tab>('overview');
+  const isMaster = user?.role === 'master';
+  // Мастеру доступен только «Расчёт мастерам»; приёмщик сюда не попадает.
+  const [tab, setTab] = useState<Tab>(isMaster ? 'payouts' : 'overview');
   const [periodMode, setPeriodMode] = useState<PeriodMode>('month');
   const [selMonth, setSelMonth] = useState(currentMonth);
   const [selYear, setSelYear] = useState(currentYear);
@@ -39,8 +41,17 @@ export function FinancePage() {
   const [modal, setModal] = useState<ModalType>(null);
   const [refunds, setRefunds] = useState<Array<{ id: number; amount: string; refunded_at: string; refund_reason: string | null; payment_method_name: string; order_id: number; client_name: string }>>([]);
 
-  useEffect(() => { getAllUsers().then(u => setMasters(u.filter(x => x.role === 'master'))).catch(() => {}); }, []);
-  useEffect(() => { if (tab === 'refunds') getRefunds().then(setRefunds).catch(console.error); }, [tab]);
+  // Список мастеров нужен только админу для фильтра
+  useEffect(() => {
+    if (!isAdmin) return;
+    getAllUsers().then(u => setMasters(u.filter(x => x.role === 'master'))).catch(() => {});
+  }, [isAdmin]);
+  useEffect(() => { if (isAdmin && tab === 'refunds') getRefunds().then(setRefunds).catch(console.error); }, [tab, isAdmin]);
+
+  // Страховка: если роль/вкладка разошлись — мастеру показываем только его расчёт
+  useEffect(() => {
+    if (!isAdmin && tab !== 'payouts') setTab('payouts');
+  }, [isAdmin, tab]);
 
   useEffect(() => {
     // Период применяется только к «Общему отчёту» и «Расчёту мастерам».
@@ -62,10 +73,16 @@ export function FinancePage() {
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <div className="ro-tabs" style={{ flex: 1 }}>
-          <button className={`ro-tab${tab === 'overview' ? ' active' : ''}`} onClick={() => setTab('overview')}>Общий отчёт</button>
+          {isAdmin && (
+            <button className={`ro-tab${tab === 'overview' ? ' active' : ''}`} onClick={() => setTab('overview')}>Общий отчёт</button>
+          )}
           <button className={`ro-tab${tab === 'payouts' ? ' active' : ''}`} onClick={() => setTab('payouts')}>Расчёт мастерам</button>
-          <button className={`ro-tab${tab === 'accounts' ? ' active' : ''}`} onClick={() => setTab('accounts')}>Кассы</button>
-          <button className={`ro-tab${tab === 'refunds' ? ' active' : ''}`} onClick={() => setTab('refunds')}>Возвраты</button>
+          {isAdmin && (
+            <button className={`ro-tab${tab === 'accounts' ? ' active' : ''}`} onClick={() => setTab('accounts')}>Кассы</button>
+          )}
+          {isAdmin && (
+            <button className={`ro-tab${tab === 'refunds' ? ' active' : ''}`} onClick={() => setTab('refunds')}>Возвраты</button>
+          )}
         </div>
         {tab === 'overview' && report && isAdmin && (
           <button className="btn-secondary" onClick={() => {
@@ -88,8 +105,8 @@ export function FinancePage() {
         />
       )}
 
-      {tab === 'overview' && report && <FinanceOverviewTab report={report} onOpenModal={setModal} />}
-      {tab === 'overview' && loading && <div className="loading">Загрузка...</div>}
+      {isAdmin && tab === 'overview' && report && <FinanceOverviewTab report={report} onOpenModal={setModal} />}
+      {isAdmin && tab === 'overview' && loading && <div className="loading">Загрузка...</div>}
 
       {tab === 'payouts' && (
         <>
@@ -107,9 +124,9 @@ export function FinancePage() {
         </>
       )}
 
-      {tab === 'accounts' && <CashAccountsTab isAdmin={isAdmin} />}
+      {isAdmin && tab === 'accounts' && <CashAccountsTab isAdmin={isAdmin} />}
 
-      {tab === 'refunds' && (
+      {isAdmin && tab === 'refunds' && (
         <div style={{ background: 'var(--card-bg)', borderRadius: 10, border: '1px solid var(--border)', overflow: 'hidden', marginTop: 12 }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
@@ -139,7 +156,7 @@ export function FinancePage() {
         </div>
       )}
 
-      {modal && report && <FinanceModal type={modal} report={report} onClose={() => setModal(null)} />}
+      {isAdmin && modal && report && <FinanceModal type={modal} report={report} onClose={() => setModal(null)} />}
     </div>
   );
 }

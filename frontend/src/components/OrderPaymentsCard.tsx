@@ -15,6 +15,10 @@ interface Props {
 const SPLIT_REQUIRED_MIN_AMOUNT = 10_000;
 
 export function OrderPaymentsCard({ order, settings, userRole, onRefresh, onError }: Props) {
+  const isFinal = order.status_slug === 'completed' || order.status_slug === 'cancelled';
+  // Платежи принимают admin и приёмщик; мастер — только смотрит.
+  const canAddPayment = !isFinal && (userRole === 'admin' || userRole === 'reception');
+  const canEditMethod = userRole === 'admin' || userRole === 'reception';
   const [showForm, setShowForm] = useState(false);
   const [amount, setAmount] = useState('');
   const [method, setMethod] = useState<number>(0);
@@ -81,12 +85,14 @@ export function OrderPaymentsCard({ order, settings, userRole, onRefresh, onErro
     <div className="detail-card">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: order.payments.length === 0 && !showForm ? 0 : 12 }}>
         <h3 style={{ margin: 0 }}>Платежи</h3>
-        <button className="btn-icon" onClick={() => { setShowForm(!showForm); setMethod(settings?.payment_methods[0]?.id || 0); }} title="Добавить платёж">
-          <PlusCircle size={18} />
-        </button>
+        {canAddPayment && (
+          <button className="btn-icon" onClick={() => { setShowForm(!showForm); setMethod(settings?.payment_methods[0]?.id || 0); }} title="Добавить платёж">
+            <PlusCircle size={18} />
+          </button>
+        )}
       </div>
 
-      {showForm && (
+      {canAddPayment && showForm && (
         <div style={{ background: '#f8f9fa', padding: 12, borderRadius: 8, marginBottom: 12 }}>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'end' }}>
             <div>
@@ -171,7 +177,7 @@ export function OrderPaymentsCard({ order, settings, userRole, onRefresh, onErro
           </span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <strong style={{ textDecoration: p.refunded_at ? 'line-through' : 'none' }}>{Math.round(Number(p.amount))} ₸</strong>
-            {!p.refunded_at && (
+            {!p.refunded_at && canEditMethod && (
               <button onClick={() => setEditingPaymentId(editingPaymentId === p.id ? null : p.id)}
                 style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--primary)', padding: 2, display: 'flex', fontSize: 13 }} title="Сменить способ оплаты">
                 <Edit3 size={13} />

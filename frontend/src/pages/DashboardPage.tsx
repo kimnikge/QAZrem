@@ -26,6 +26,9 @@ const statusMap: Record<string, string | undefined> = {
 
 export function DashboardPage() {
   const navigate = useNavigate(); const { user } = useAuth();
+  // Статус меняют admin и master; заказ создают admin и приёмщик (мастер — нет).
+  const canChangeStatus = user?.role === 'admin' || user?.role === 'master';
+  const canCreateOrder = user?.role !== 'master';
   const [orders, setOrders] = useState<Order[]>([]);
   const [tab, setTab] = useState('active');
   const [view, setView] = useState<'table' | 'board'>('table');
@@ -178,7 +181,9 @@ export function DashboardPage() {
         onBrandChange={setBrandFilter} onMasterChange={setMasterFilter} />
 
       <div className="ro-actions">
-        <button className="ro-btn-primary" onClick={() => navigate('/create-order')}>+ Заказ</button>
+        {canCreateOrder && (
+          <button className="ro-btn-primary" onClick={() => navigate('/create-order')}>+ Заказ</button>
+        )}
         {user?.role === 'admin' && (
           <button className="btn-secondary" onClick={() => {
             const params = new URLSearchParams();
@@ -206,10 +211,11 @@ export function DashboardPage() {
 
       {loading ? <div className="loading">Загрузка...</div> : (
         view === 'board' ? (
-          <BoardView orders={orders} onOrderUpdated={handleModalRefresh} onCardOpen={o => setModalOrder(o)} />
+          <BoardView orders={orders} canChangeStatus={canChangeStatus} onOrderUpdated={handleModalRefresh} onCardOpen={o => setModalOrder(o)} />
         ) : (
           <DashboardTable orders={orders} compact={compact} colOrder={colOrder} dragCol={dragCol}
-            statusDropdownId={statusDropdownId} onColOrderChange={setColOrder} onDragColChange={setDragCol}
+            statusDropdownId={statusDropdownId} canChangeStatus={canChangeStatus}
+            onColOrderChange={setColOrder} onDragColChange={setDragCol}
             onStatusDropdownChange={setStatusDropdownId} onStatusChange={handleQuickStatusChange} onRowClick={o => setModalOrder(o)} />
         )
       )}

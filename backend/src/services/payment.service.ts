@@ -98,7 +98,8 @@ export async function createPayment(input: CreatePaymentInput): Promise<PaymentR
       );
     }
 
-    // Обновляем total_spent у клиента (только для доплат)
+    // total_spent по-прежнему учитывает только доплаты:
+    // менять семантику без бэкфилла существующих предоплат нельзя.
     if (!input.is_prepayment) {
       await dbClient.query(
         `UPDATE clients SET total_spent = total_spent + $1
@@ -138,56 +139,67 @@ export async function createPayment(input: CreatePaymentInput): Promise<PaymentR
 
 /**
  * Удалить платёж с корректировкой балансов.
+ *
+ * Если платёж уже был возвращён (refunded_at IS NOT NULL), его эффект
+ * на prepaid/total_spent/кассы уже сторнирован в момент возврата —
+ * повторно уменьшать суммы нельзя.
  */
 export async function deletePayment(paymentId: number): Promise<void> {
   const dbClient = await pool.connect();
   try {
+    await dbClient.query('BEGIN');
+
     const payResult = await dbClient.query(
       `SELECT p.*, o.cost, d.client_id
        FROM payments p
        JOIN orders o ON o.id = p.order_id
        JOIN devices d ON d.id = o.device_id
-       WHERE p.id = $1`,
+       WHERE p.id = $1
+       FOR UPDATE OF p`,
       [paymentId],
     );
     if (payResult.rows.length === 0) throw new NotFoundError('Платёж');
 
     const pay = payResult.rows[0];
+    const alreadyRefunded = Boolean(pay.refunded_at);
 
-    await dbClient.query('BEGIN');
+    if (!alreadyRefunded) {
+      // Предоплата: вернуть orders.prepaid
+      if (pay.is_prepayment) {
+        await dbClient.query(
+          'UPDATE orders SET prepaid = GREATEST(0, prepaid - $1) WHERE id = $2',
+          [pay.amount, pay.order_id],
+        );
+      }
 
-    // Корректировка предоплаты
-    if (pay.is_prepayment) {
-      await dbClient.query(
-        'UPDATE orders SET prepaid = GREATEST(0, prepaid - $1) WHERE id = $2',
-        [pay.amount, pay.order_id],
+      // total_spent учитывает только доплаты (см. createPayment)
+      if (!pay.is_prepayment) {
+        await dbClient.query(
+          'UPDATE clients SET total_spent = GREATEST(0, total_spent - $1) WHERE id = $2',
+          [pay.amount, pay.client_id],
+        );
+      }
+
+      // Вернуть деньги на кассы по сплитам
+      const splits = await dbClient.query(
+        'SELECT account_id, amount FROM payment_splits WHERE payment_id = $1',
+        [paymentId],
       );
-    } else {
-      await dbClient.query(
-        'UPDATE clients SET total_spent = GREATEST(0, total_spent - $1) WHERE id = $2',
-        [pay.amount, pay.client_id],
-      );
+      for (const s of splits.rows) {
+        await dbClient.query(
+          'UPDATE company_accounts SET balance = balance - $1 WHERE id = $2',
+          [s.amount, s.account_id],
+        );
+      }
     }
 
-    // Удаляем сплиты (если есть) и корректируем балансы касс
-    const splits = await dbClient.query(
-      'SELECT account_id, amount FROM payment_splits WHERE payment_id = $1',
-      [paymentId],
-    );
-    for (const s of splits.rows) {
-      await dbClient.query(
-        'UPDATE company_accounts SET balance = GREATEST(0, balance - $1) WHERE id = $2',
-        [s.amount, s.account_id],
-      );
-    }
+    // Сплиты удалятся каскадно вместе с платежом; удаляем явно для ясности
     await dbClient.query('DELETE FROM payment_splits WHERE payment_id = $1', [paymentId]);
-
-    // Удаляем платёж
     await dbClient.query('DELETE FROM payments WHERE id = $1', [paymentId]);
 
     await dbClient.query('COMMIT');
   } catch (error) {
-    await dbClient.query('ROLLBACK');
+    await dbClient.query('ROLLBACK').catch(() => {});
     throw error;
   } finally {
     dbClient.release();
@@ -203,8 +215,10 @@ export async function updatePaymentMethod(
 ): Promise<void> {
   const dbClient = await pool.connect();
   try {
+    await dbClient.query('BEGIN');
+
     const payResult = await dbClient.query(
-      'SELECT id, refunded_at FROM payments WHERE id = $1',
+      'SELECT id, refunded_at FROM payments WHERE id = $1 FOR UPDATE',
       [paymentId],
     );
     if (payResult.rows.length === 0) throw new NotFoundError('Платёж');
@@ -218,22 +232,9 @@ export async function updatePaymentMethod(
     );
     if (methodResult.rows.length === 0) throw new NotFoundError('Способ оплаты');
 
-    await dbClient.query('BEGIN');
-
-    // Корректируем балансы касс от старых сплитов
-    const oldSplits = await dbClient.query(
-      'SELECT account_id, amount FROM payment_splits WHERE payment_id = $1',
-      [paymentId],
-    );
-    for (const s of oldSplits.rows) {
-      await dbClient.query(
-        'UPDATE company_accounts SET balance = GREATEST(0, balance - $1) WHERE id = $2',
-        [s.amount, s.account_id],
-      );
-    }
-    await dbClient.query('DELETE FROM payment_splits WHERE payment_id = $1', [paymentId]);
-
-    // Обновляем способ оплаты
+    // Сплиты описывают, в какие кассы физически поступили деньги.
+    // Смена способа оплаты не должна удалять сплиты и уменьшать балансы —
+    // для этого нужна отдельная операция перераспределения.
     await dbClient.query(
       'UPDATE payments SET payment_method_id = $1 WHERE id = $2',
       [paymentMethodId, paymentId],
@@ -241,7 +242,7 @@ export async function updatePaymentMethod(
 
     await dbClient.query('COMMIT');
   } catch (error) {
-    await dbClient.query('ROLLBACK');
+    await dbClient.query('ROLLBACK').catch(() => {});
     throw error;
   } finally {
     dbClient.release();

@@ -5,7 +5,7 @@
 
 export { request, buildQuery } from './client';
 
-export { type UserInfo, type LoginResponse, login } from './auth';
+export { type UserInfo, type LoginResponse, login, logout } from './auth';
 
 export { type Client, getClients, getClient } from './clients';
 

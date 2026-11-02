@@ -63,6 +63,10 @@ accountsRouter.post('/:id/operations', requireRole('admin'), async (req, res, ne
       description: z.string().optional()
     }).parse(req.body);
 
+    // BEGIN до FOR UPDATE: иначе блокировка снимается сразу после SELECT
+    // и проверка баланса становится гонкой с параллельной операцией.
+    await dbClient.query('BEGIN');
+
     // Проверка существования кассы
     const acc = await dbClient.query('SELECT id, balance FROM company_accounts WHERE id = $1 FOR UPDATE', [accountId]);
     if (acc.rows.length === 0) throw new NotFoundError('Касса');
@@ -71,8 +75,6 @@ accountsRouter.post('/:id/operations', requireRole('admin'), async (req, res, ne
     if (type === 'expense' && Number(acc.rows[0].balance) < amount) {
       throw new BadRequestError('Недостаточно средств в кассе');
     }
-
-    await dbClient.query('BEGIN');
 
     // Обновить баланс
     if (type === 'income') {
@@ -91,7 +93,7 @@ accountsRouter.post('/:id/operations', requireRole('admin'), async (req, res, ne
     await dbClient.query('COMMIT');
     res.status(201).json(result.rows[0]);
   } catch (error) {
-    await dbClient.query('ROLLBACK');
+    await dbClient.query('ROLLBACK').catch(() => {});
     next(error);
   } finally {
     dbClient.release();
@@ -115,6 +117,7 @@ accountsRouter.get('/:id/transactions', async (req, res, next) => {
       JOIN payments p ON p.id = ps.payment_id
       JOIN orders o ON o.id = p.order_id
       WHERE ps.account_id = $1
+        AND p.refunded_at IS NULL
       ORDER BY ps.created_at`,
       [id]
     );

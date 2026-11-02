@@ -34,6 +34,24 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+/** Создание заказов: admin и приёмщик (мастер только ведёт существующие). */
+function CreateOrderRoute({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, initialized, user } = useAuth();
+  if (!initialized) return null;
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  if (user?.role === 'master') return <Navigate to="/" replace />;
+  return <>{children}</>;
+}
+
+/** Финансы: admin — полностью, master — только свой расчёт; приёмщику закрыто. */
+function FinanceRoute({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, initialized, user } = useAuth();
+  if (!initialized) return null;
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  if (user?.role === 'reception') return <Navigate to="/" replace />;
+  return <>{children}</>;
+}
+
 function AppRoutes() {
   const { isAuthenticated } = useAuth();
 
@@ -42,18 +60,18 @@ function AppRoutes() {
       <Route path="/login" element={isAuthenticated ? <Navigate to="/" replace /> : <LoginPage />} />
       <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route path="/" element={<DashboardPage />} />
-        <Route path="/create-order" element={<CreateOrderPage />} />
+        <Route path="/create-order" element={<CreateOrderRoute><CreateOrderPage /></CreateOrderRoute>} />
         <Route path="/orders/:id" element={<OrderDetailPage />} />
         <Route path="/print-order/:id" element={<PrintOrderPage />} />
         <Route path="/parts" element={<PartsPage />} />
         <Route path="/catalog" element={<CatalogPage />} />
         <Route path="/clients" element={<ClientsPage />} />
         <Route path="/services" element={<ServicesPage />} />
-        <Route path="/finance" element={<FinancePage />} />
-        <Route path="/analytics" element={<AnalyticsPage />} />
-        <Route path="/reports" element={<ReportsPage />} />
-        <Route path="/warehouse/categories" element={<WarehouseCategoriesPage />} />
-        <Route path="/warehouse/inventory" element={<WarehouseInventoryPage />} />
+        <Route path="/finance" element={<FinanceRoute><FinancePage /></FinanceRoute>} />
+        <Route path="/analytics" element={<AdminRoute><AnalyticsPage /></AdminRoute>} />
+        <Route path="/reports" element={<AdminRoute><ReportsPage /></AdminRoute>} />
+        <Route path="/warehouse/categories" element={<AdminRoute><WarehouseCategoriesPage /></AdminRoute>} />
+        <Route path="/warehouse/inventory" element={<AdminRoute><WarehouseInventoryPage /></AdminRoute>} />
         <Route path="/permissions" element={<AdminRoute><AdminPermissionsPage /></AdminRoute>} />
         <Route path="/notifications" element={<NotificationsPage />} />
         <Route path="/settings" element={<AdminRoute><SettingsPage /></AdminRoute>} />

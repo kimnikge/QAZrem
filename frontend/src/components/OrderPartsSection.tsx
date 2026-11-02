@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Plus, Trash2, Wrench, Package } from 'lucide-react';
 import { getParts, assignPartToOrder, deleteOrderPart, getServices, assignServiceToOrder, deleteOrderService, type Part, type Service } from '../api';
+import { useAuth } from '../context/AuthContext';
 
 type OrderPart = { id: number; part_name: string; sku: string; quantity_used: number; selling_price_at_moment: string };
 type OrderService = { service_id: number; service_name: string; quantity: number; price_at_moment: string; master_commission_pct_at_moment: number };
@@ -11,14 +12,25 @@ interface Props {
   initialServices: OrderService[];
   onRefresh: () => void;
   onError: (msg: string) => void;
+  readOnly?: boolean;
 }
 
-export function OrderPartsSection({ orderId, initialParts, initialServices, onRefresh, onError }: Props) {
+export function OrderPartsSection({ orderId, initialParts, initialServices, onRefresh, onError, readOnly = false }: Props) {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
+  const isMaster = user?.role === 'master';
+  // Запчасти: списание/возврат — admin и master; удаление возврата — только admin.
+  // Услуги: добавлять/убирать может и приёмщик.
+  const canManageParts = isAdmin || isMaster;
+  const canRemovePart = isAdmin;
+  const canManageServices = isAdmin || isMaster || user?.role === 'reception';
+  const canAdd = !readOnly && (canManageParts || canManageServices);
+
   const [allParts, setAllParts] = useState<Part[]>([]);
   const [allServices, setAllServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
-  const [itemType, setItemType] = useState<'part' | 'service'>('part');
+  const [itemType, setItemType] = useState<'part' | 'service'>(canManageParts ? 'part' : 'service');
   const [selectedPartId, setSelectedPartId] = useState('');
   const [selectedServiceId, setSelectedServiceId] = useState('');
   const [quantity, setQuantity] = useState(1);
@@ -65,14 +77,17 @@ export function OrderPartsSection({ orderId, initialParts, initialServices, onRe
     <div className="modal-section">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: hasItems ? 8 : 0 }}>
         <div className="modal-subtitle">Запчасти и услуги</div>
-        <button className="modal-btn-icon" onClick={() => setShowAdd(!showAdd)} title="Добавить">
-          <Plus size={16} />
-        </button>
+        {canAdd && (
+          <button className="modal-btn-icon" onClick={() => setShowAdd(!showAdd)} title="Добавить">
+            <Plus size={16} />
+          </button>
+        )}
       </div>
 
-      {showAdd && (
+      {canAdd && showAdd && (
         <div style={{ background: 'var(--bg)', padding: 10, borderRadius: 8, marginBottom: 8 }}>
           {/* Переключатель: запчасть / услуга */}
+          {canManageParts && canManageServices && (
           <div style={{ display: 'flex', gap: 0, marginBottom: 8, background: '#e8eaed', borderRadius: 6, padding: 2, width: 'fit-content' }}>
             <button
               onClick={() => { setItemType('part'); setSelectedServiceId(''); }}
@@ -101,6 +116,7 @@ export function OrderPartsSection({ orderId, initialParts, initialServices, onRe
               <Wrench size={12} /> Услуга
             </button>
           </div>
+          )}
 
           <div style={{ display: 'flex', gap: 8, alignItems: 'end', flexWrap: 'wrap' }}>
             {itemType === 'part' ? (
@@ -145,9 +161,11 @@ export function OrderPartsSection({ orderId, initialParts, initialServices, onRe
           </span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span className="modal-value" style={{ fontSize: 13 }}>{Math.round(Number(p.selling_price_at_moment))} ₸</span>
-            <button onClick={() => handleRemovePart(p.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', padding: 2, display: 'flex' }} title="Вернуть на склад">
-              <Trash2 size={13} />
-            </button>
+            {!readOnly && canRemovePart && (
+              <button onClick={() => handleRemovePart(p.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', padding: 2, display: 'flex' }} title="Вернуть на склад">
+                <Trash2 size={13} />
+              </button>
+            )}
           </div>
         </div>
       ))}
@@ -161,9 +179,11 @@ export function OrderPartsSection({ orderId, initialParts, initialServices, onRe
           </span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span className="modal-value" style={{ fontSize: 13 }}>{Math.round(Number(s.price_at_moment))} ₸</span>
-            <button onClick={() => handleRemoveService(s.service_id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', padding: 2, display: 'flex' }} title="Удалить услугу">
-              <Trash2 size={13} />
-            </button>
+            {!readOnly && canManageServices && (
+              <button onClick={() => handleRemoveService(s.service_id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', padding: 2, display: 'flex' }} title="Удалить услугу">
+                <Trash2 size={13} />
+              </button>
+            )}
           </div>
         </div>
       ))}

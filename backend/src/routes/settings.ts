@@ -7,17 +7,22 @@ import { requireAuth, requireRole } from '../middleware/auth.js';
 export const settingsRouter = Router();
 
 settingsRouter.use(requireAuth);
-settingsRouter.use(requireRole('admin'));
 
-// GET /settings — все справочники
-settingsRouter.get('/', async (_req, res, next) => {
+// GET /settings — справочники.
+// Доступно всем авторизованным: приёмщику и мастеру нужны способы оплаты.
+// Список пользователей (логины, роли) отдаём только администратору.
+settingsRouter.get('/', async (req, res, next) => {
   try {
-    const [statuses, paymentMethods, expenseCategories, users] = await Promise.all([
+    const isAdmin = req.user?.role === 'admin';
+    const [statuses, paymentMethods, expenseCategories] = await Promise.all([
       pool.query('SELECT id, name, slug, "order", is_final FROM order_statuses ORDER BY "order"'),
       pool.query('SELECT id, name FROM payment_methods ORDER BY id'),
       pool.query('SELECT id, name FROM expense_categories ORDER BY id'),
-      pool.query('SELECT id, name, login, role, default_commission_pct, created_at FROM users ORDER BY name')
     ]);
+
+    const users = isAdmin
+      ? await pool.query('SELECT id, name, login, role, default_commission_pct, created_at FROM users ORDER BY name')
+      : { rows: [] };
 
     res.json({
       order_statuses: statuses.rows,
@@ -33,7 +38,7 @@ settingsRouter.get('/', async (_req, res, next) => {
 // POST /settings/payment-methods — добавить способ оплаты
 const paymentMethodSchema = z.object({ name: z.string().min(1) });
 
-settingsRouter.post('/payment-methods', async (req, res, next) => {
+settingsRouter.post('/payment-methods', requireRole('admin'), async (req, res, next) => {
   try {
     const { name } = paymentMethodSchema.parse(req.body);
     const result = await pool.query(
@@ -47,7 +52,7 @@ settingsRouter.post('/payment-methods', async (req, res, next) => {
 });
 
 // DELETE /settings/payment-methods/:id
-settingsRouter.delete('/payment-methods/:id', async (req, res, next) => {
+settingsRouter.delete('/payment-methods/:id', requireRole('admin'), async (req, res, next) => {
   try {
     const { id } = req.params;
     // Проверяем, есть ли платежи с этим способом
@@ -66,7 +71,7 @@ settingsRouter.delete('/payment-methods/:id', async (req, res, next) => {
 });
 
 // POST /settings/expense-categories — добавить категорию расходов
-settingsRouter.post('/expense-categories', async (req, res, next) => {
+settingsRouter.post('/expense-categories', requireRole('admin'), async (req, res, next) => {
   try {
     const { name } = paymentMethodSchema.parse(req.body);
     const result = await pool.query(
@@ -80,7 +85,7 @@ settingsRouter.post('/expense-categories', async (req, res, next) => {
 });
 
 // DELETE /settings/expense-categories/:id
-settingsRouter.delete('/expense-categories/:id', async (req, res, next) => {
+settingsRouter.delete('/expense-categories/:id', requireRole('admin'), async (req, res, next) => {
   try {
     const { id } = req.params;
     // Проверяем, есть ли расходы с этой категорией

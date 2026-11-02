@@ -169,12 +169,16 @@ export function ServicesPage() {
                       </div>
                     ) : (
                       <div style={{ display: 'flex', gap: 4 }}>
-                        <button className="btn-status" onClick={() => startEdit(s)} title="Редактировать">
-                          <Edit3 size={14} />
-                        </button>
-                        <button className="btn-status" onClick={() => handleDelete(s.id, s.name)} style={{ color: '#ef4444' }} title="Удалить">
-                          <X size={14} />
-                        </button>
+                        {isAdmin && (
+                          <>
+                            <button className="btn-status" onClick={() => startEdit(s)} title="Редактировать">
+                              <Edit3 size={14} />
+                            </button>
+                            <button className="btn-status" onClick={() => handleDelete(s.id, s.name)} style={{ color: '#ef4444' }} title="Удалить">
+                              <X size={14} />
+                            </button>
+                          </>
+                        )}
                       </div>
                     )}
                   </td>

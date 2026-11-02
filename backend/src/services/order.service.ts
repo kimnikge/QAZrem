@@ -51,6 +51,14 @@ export async function createOrder(
 
     let deviceId: number;
 
+    // Скидка не может превышать стоимость — проверяем ДО выбора сценария,
+    // иначе при создании по device_id проверка пропускалась.
+    const discount = Number(input.discount ?? 0);
+    const estimatedCost = Number(input.estimated_cost ?? 0);
+    if (discount > estimatedCost) {
+      throw new BadRequestError('Скидка не может превышать стоимость заказа');
+    }
+
     if (input.device_id) {
       // Сценарий A: существующее устройство
       const device = await dbClient.query(
@@ -70,12 +78,6 @@ export async function createOrder(
 
       if (!clientData || !deviceData) {
         throw new BadRequestError('Не указаны данные клиента и устройства');
-      }
-
-      const discount = Number(input.discount ?? 0);
-      const estimatedCost = Number(input.estimated_cost ?? 0);
-      if (discount > estimatedCost) {
-        throw new BadRequestError('Скидка не может превышать стоимость заказа');
       }
 
       let clientResult = await dbClient.query(
@@ -163,6 +165,11 @@ export async function createOrder(
     const services = (input.services as Array<{ service_id: number; quantity: number }> | undefined) ?? [];
     await assignServices(dbClient, orderId, services);
 
+    // Стоимость заказа = сумма списанных запчастей и услуг.
+    // Без этого вызова заказ, созданный сразу с запчастями/услугами,
+    // оставался бы с cost = 0 до первого изменения состава.
+    await recalcOrderCost(dbClient, orderId);
+
     await dbClient.query('COMMIT');
 
     notifyNewOrder(orderId).catch((err) =>
@@ -223,7 +230,7 @@ export async function updateOrderStatus(
 
     if (newSlug === 'completed') {
       const paymentSum = await dbClient.query(
-        'SELECT COALESCE(SUM(amount), 0) AS total_paid FROM payments WHERE order_id = $1',
+        'SELECT COALESCE(SUM(amount), 0) AS total_paid FROM payments WHERE order_id = $1 AND refunded_at IS NULL',
         [orderId],
       );
       const totalPaid = Math.round(Number(paymentSum.rows[0].total_paid));

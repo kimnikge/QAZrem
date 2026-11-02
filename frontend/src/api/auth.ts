@@ -9,3 +9,8 @@ export function login(login: string, password: string) {
     body: JSON.stringify({ login, password })
   });
 }
+
+/** Очистить httpOnly cookie на сервере (Bearer-токен чистит AuthContext) */
+export function logout() {
+  return request<{ message: string }>('/auth/logout', { method: 'POST' });
+}

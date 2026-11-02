@@ -15,6 +15,8 @@ export function OrderDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
+  // Мастер и админ редактируют заказ; приёмщик — только просмотр и оплата.
+  const canEditOrder = user?.role === 'admin' || user?.role === 'master';
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const [availableStatuses, setAvailableStatuses] = useState<AvailableStatus[]>([]);
   const [loading, setLoading] = useState(true);
@@ -64,7 +66,9 @@ export function OrderDetailPage() {
     // Проверка: нельзя выдать неоплаченный заказ
     if (slug === 'completed' && order) {
       const finalCost = Math.max(0, Math.round(Number(order.cost)) - Math.round(Number(order.discount)));
-      const totalPaid = order.payments.reduce((s, p) => s + Math.round(Number(p.amount)), 0);
+      const totalPaid = order.payments
+        .filter(p => !p.refunded_at)
+        .reduce((s, p) => s + Math.round(Number(p.amount)), 0);
       if (totalPaid < finalCost) {
         setError(`Нельзя выдать заказ: не полностью оплачен (оплачено ${totalPaid} из ${finalCost} ₸). Примите оплату ниже.`);
         // Прокрутка к блоку оплаты
@@ -81,6 +85,8 @@ export function OrderDetailPage() {
   if (error) return <div className="error-message">{error}</div>;
   if (!order) return <div className="error-message">Заказ не найден</div>;
 
+  const isFinal = order.status_slug === 'completed' || order.status_slug === 'cancelled';
+
   return (
     <div>
       <div className="page-header">
@@ -89,11 +95,11 @@ export function OrderDetailPage() {
         <div style={{ display: 'flex', gap: 8 }}>
           <button className="btn-icon" onClick={load}><RefreshCw size={18} /></button>
           <button className="btn-icon" onClick={() => navigate(`/print-order/${order.id}`)}><Printer size={18} /></button>
-          {editing ? (
+          {canEditOrder && !isFinal && (editing ? (
             <button className="btn-primary" onClick={handleSave} disabled={saving}><Save size={16} /> {saving ? 'Сохранение...' : 'Сохранить'}</button>
           ) : (
             <button className="btn-secondary" onClick={() => setEditing(true)}>Редактировать</button>
-          )}
+          ))}
         </div>
       </div>
 
@@ -103,7 +109,7 @@ export function OrderDetailPage() {
           editDiagnosis={editDiagnosis} onEditDiagnosis={setEditDiagnosis} editComment={editComment} onEditComment={setEditComment}
           editGroupId={editGroupId} onEditGroupId={setEditGroupId} groups={groups} />
 
-        {availableStatuses.length > 0 && (
+        {canEditOrder && availableStatuses.length > 0 && (
           <div className="detail-card">
             <h3>Смена статуса</h3>
             <div className="status-actions">
@@ -145,12 +151,12 @@ export function OrderDetailPage() {
 
         {/* Запчасти и услуги */}
         <div className="detail-card">
-          <OrderPartsSection orderId={order.id} initialParts={order.parts} initialServices={order.services} onRefresh={load} onError={setError} />
+          <OrderPartsSection orderId={order.id} initialParts={order.parts} initialServices={order.services} readOnly={isFinal} onRefresh={load} onError={setError} />
         </div>
 
         {/* Резервы запчастей */}
         <div className="detail-card">
-          <OrderReservationsSection orderId={order.id} />
+          <OrderReservationsSection orderId={order.id} readOnly={isFinal} />
         </div>
       </div>
     </div>

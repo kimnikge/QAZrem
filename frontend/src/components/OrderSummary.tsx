@@ -14,12 +14,13 @@ export function OrderSummary({ orders, currentUserId, currentUserRole }: Props) 
     ? orders.filter(o => o.master_id === currentUserId && !['completed', 'cancelled'].includes(o.status_slug))
     : [];
 
-  // Неоплаченная сумма: cost - discount - prepaid (приблизительно, без учёта платежей)
+  // Неоплаченная сумма: cost - discount - сумма фактических платежей (без возвратов).
+  // paid_total считает бэкенд в GET /orders.
   const unpaidTotal = orders
     .filter(o => !['completed', 'cancelled'].includes(o.status_slug))
     .reduce((sum, o) => {
       const total = Math.round(Number(o.cost)) - Math.round(Number(o.discount || 0));
-      const paid = Math.round(Number(o.prepaid || 0));
+      const paid = Math.round(Number(o.paid_total || 0));
       return sum + Math.max(0, total - paid);
     }, 0);
 

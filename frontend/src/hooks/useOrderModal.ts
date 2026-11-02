@@ -85,7 +85,9 @@ export function useOrderModal({ orderId, preload, onOrderUpdated }: UseOrderModa
       const o = order || preloadOrder;
       if (o) {
         const finalCost = Math.max(0, Math.round(Number(o.cost)) - Math.round(Number(o.discount)));
-        const totalPaid = (o.payments || []).reduce((s: number, p: any) => s + Math.round(Number(p.amount)), 0);
+        const totalPaid = (o.payments || [])
+          .filter((p: any) => !p.refunded_at)
+          .reduce((s: number, p: any) => s + Math.round(Number(p.amount)), 0);
         if (totalPaid < finalCost) {
           setError(`Нельзя выдать заказ: не полностью оплачен (оплачено ${totalPaid} из ${finalCost} ₸). Примите оплату в блоке ниже.`);
           return;

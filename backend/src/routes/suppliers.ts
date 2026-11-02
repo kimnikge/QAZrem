@@ -142,11 +142,9 @@ suppliersRouter.post('/:id/return', requireRole('admin'), async (req, res, next)
       [quantity, batch_id]
     );
 
-    // Уменьшаем общий остаток запчасти
-    await dbClient.query(
-      'UPDATE parts SET quantity = quantity - $1 WHERE id = $2',
-      [quantity, part_id]
-    );
+    // parts.quantity пересчитывается триггером trg_batches_sync_quantity
+    // из SUM(part_batches.current_quantity). Ручное уменьшение здесь
+    // привело бы к двойному списанию остатка.
 
     // Снимаем остаток по локациям
     await withdrawPartLocations(dbClient, part_id, quantity);

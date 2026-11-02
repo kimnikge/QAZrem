@@ -7,11 +7,12 @@ import { ORDER_STATUSES, STATUS_TRANSITIONS } from '../constants';
 
 interface Props {
   orders: Order[];
+  canChangeStatus: boolean;
   onOrderUpdated: () => void;
   onCardOpen: (order: Order) => void;
 }
 
-export function BoardView({ orders, onOrderUpdated, onCardOpen }: Props) {
+export function BoardView({ orders, canChangeStatus, onOrderUpdated, onCardOpen }: Props) {
   const [draggingId, setDraggingId] = useState<string | null>(null);
 
   const sensors = useSensors(
@@ -24,6 +25,8 @@ export function BoardView({ orders, onOrderUpdated, onCardOpen }: Props) {
 
   async function handleDragEnd(event: DragEndEvent) {
     setDraggingId(null);
+    // Приёмщик не меняет статусы — drag-and-drop для него только просмотр
+    if (!canChangeStatus) return;
     const { active, over } = event;
     if (!over) return;
 
@@ -52,7 +55,7 @@ export function BoardView({ orders, onOrderUpdated, onCardOpen }: Props) {
   }));
 
   return (
-    <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+    <DndContext sensors={canChangeStatus ? sensors : []} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div className="board">
         {columns.map(col => (
           <BoardColumn key={col.status} status={col.status} orders={col.orders} onCardOpen={onCardOpen} />

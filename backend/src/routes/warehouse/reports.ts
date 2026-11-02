@@ -193,12 +193,18 @@ warehouseReportsRouter.get('/by-category', async (req, res, next) => {
   try {
     const result = await pool.query(
       `SELECT pc.id, pc.name,
-        COUNT(p.id)::int AS parts_count,
+        COUNT(DISTINCT p.id)::int AS parts_count,
         COALESCE(SUM(p.quantity), 0)::int AS total_stock,
         COALESCE(SUM(p.quantity * p.purchase_price), 0) AS total_cost,
         COALESCE(SUM(p.quantity * p.selling_price), 0) AS total_value
        FROM part_categories pc
-       LEFT JOIN parts p ON p.category_id = pc.id AND p.is_active = TRUE
+       LEFT JOIN parts p ON p.is_active = TRUE AND (
+         p.category_id = pc.id
+         OR EXISTS (
+           SELECT 1 FROM part_category_links pcl
+           WHERE pcl.part_id = p.id AND pcl.category_id = pc.id
+         )
+       )
        GROUP BY pc.id, pc.name
        ORDER BY total_value DESC`
     );

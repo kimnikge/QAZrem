@@ -20,7 +20,11 @@ import { createNotification, checkStockAlerts } from '../services/notifications.
 
 export const ordersRouter = Router();
 
-// Все роуты заказов требуют авторизации
+// Все роуты заказов требуют авторизации.
+//
+// Политика доступа (согласована): admin — полный доступ; master — видит и
+// редактирует ВСЕ заказы (не только свои); reception — просмотр и создание
+// заказов, приём оплаты, но без смены статуса и редактирования.
 ordersRouter.use(requireAuth);
 
 // ============================================================
@@ -130,6 +134,8 @@ ordersRouter.get('/', parsePagination(), async (req, res, next) => {
       o.created_at, o.completed_at,
       o.password, o.face_id, o.completeness, o.condition, o.appearance, o.manager_notes, o.order_type,
       o.image_url,
+      (SELECT COALESCE(SUM(p.amount), 0) FROM payments p
+        WHERE p.order_id = o.id AND p.refunded_at IS NULL) AS paid_total,
       (o.deadline IS NOT NULL AND o.deadline < NOW() AND os.is_final = FALSE) AS is_overdue,
       os.name AS status_name, os.slug AS status_slug,
       d.brand, d.model, d.imei,
@@ -262,6 +268,8 @@ ordersRouter.get('/:id([0-9]+)', async (req, res, next) => {
         o.created_at, o.completed_at,
         o.password, o.face_id, o.completeness, o.condition, o.appearance, o.manager_notes, o.order_type,
         o.image_url,
+        (SELECT COALESCE(SUM(p.amount), 0) FROM payments p
+          WHERE p.order_id = o.id AND p.refunded_at IS NULL) AS paid_total,
         os.name AS status_name, os.slug AS status_slug, os.is_final,
         d.brand, d.model, d.imei, d.serial_number, d.color,
         c.id AS client_id, c.name AS client_name, c.phone AS client_phone, c.email AS client_email, c.address AS client_address,
@@ -439,12 +447,20 @@ ordersRouter.patch('/:id([0-9]+)', requireRole('admin', 'master'), async (req, r
     // Раньше три UPDATE шли отдельными запросами: при ошибке на середине
     // данные рассинхронизировались.
     await withTransaction(async (dbClient) => {
-      // Один SELECT вместо двух (было: проверка скидки + отдельно device_id)
+      // Один SELECT вместо двух (было: проверка скидки + отдельно device_id).
+      // Заодно проверяем, что заказ не финальный: выданные и отменённые
+      // заказы редактировать нельзя (правило из docs/важно.md).
       const orderRow = await dbClient.query(
-        'SELECT cost, device_id FROM orders WHERE id = $1',
+        `SELECT o.cost, o.device_id, os.is_final
+         FROM orders o
+         JOIN order_statuses os ON os.id = o.status_id
+         WHERE o.id = $1`,
         [id]
       );
       if (orderRow.rows.length === 0) throw new NotFoundError('Заказ');
+      if (orderRow.rows[0].is_final) {
+        throw new BadRequestError('Нельзя редактировать завершённый или отменённый заказ');
+      }
       const deviceId = orderRow.rows[0].device_id;
 
       // Валидация: скидка не может превышать стоимость
@@ -627,6 +643,17 @@ ordersRouter.delete('/:id([0-9]+)/parts/:opId([0-9]+)', requireRole('admin'), as
     const opId = idParamSchema.parse(req.params.opId);
 
     const result = await withTransaction(async (dbClient) => {
+      const orderState = await dbClient.query(
+        `SELECT os.is_final FROM orders o
+         JOIN order_statuses os ON os.id = o.status_id
+         WHERE o.id = $1`,
+        [orderId]
+      );
+      if (orderState.rows.length === 0) throw new NotFoundError('Заказ');
+      if (orderState.rows[0].is_final) {
+        throw new BadRequestError('Нельзя вернуть запчасть из завершённого или отменённого заказа');
+      }
+
       const row = await dbClient.query(
         `SELECT op.id, op.part_id, op.quantity_used, op.batch_id, p.name
          FROM order_parts op JOIN parts p ON p.id = op.part_id
@@ -840,6 +867,17 @@ ordersRouter.delete('/:id([0-9]+)/services/:sid([0-9]+)', requireRole('admin', '
     const serviceId = parseInt(req.params.sid);
 
     const removedName = await withTransaction(async (dbClient) => {
+      const orderState = await dbClient.query(
+        `SELECT os.is_final FROM orders o
+         JOIN order_statuses os ON os.id = o.status_id
+         WHERE o.id = $1`,
+        [orderId]
+      );
+      if (orderState.rows.length === 0) throw new NotFoundError('Заказ');
+      if (orderState.rows[0].is_final) {
+        throw new BadRequestError('Нельзя убрать услугу из завершённого или отменённого заказа');
+      }
+
       const row = await dbClient.query(
         'SELECT osrv.quantity, s.name FROM order_services osrv JOIN services s ON s.id = osrv.service_id WHERE osrv.order_id = $1 AND osrv.service_id = $2',
         [orderId, serviceId]

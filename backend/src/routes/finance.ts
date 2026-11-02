@@ -99,7 +99,7 @@ financeRouter.get('/report', requireRole('admin'), async (req, res, next) => {
         [fromDate, toDate]
       ),
 
-      // Детализация: заказы с долгом (income - paid > 0)
+      // Детализация: только заказы с реальным долгом (income - paid > 0)
       pool.query(
         `SELECT o.id, o.cost, o.discount, o.completed_at,
                 c.name AS client_name, d.brand, d.model,
@@ -116,6 +116,7 @@ financeRouter.get('/report', requireRole('admin'), async (req, res, next) => {
          WHERE o.completed_at IS NOT NULL
            AND o.completed_at >= $1
            AND o.completed_at <= $2
+           AND (o.cost - o.discount - COALESCE(payments.paid_total, 0)) > 0
          ORDER BY (o.cost - o.discount - COALESCE(payments.paid_total, 0)) DESC`,
         [fromDate, toDate]
       ),
@@ -155,6 +156,27 @@ financeRouter.get('/report', requireRole('admin'), async (req, res, next) => {
     const totalExpenses = directExpenses + partsCost;
     const profit = income - totalExpenses;
 
+    // Долг = сумма положительных остатков по завершённым заказам.
+    // Не используем income - paid: переплаты по одним заказам не должны
+    // уменьшать долг по другим.
+    const debtOrders = debtOrdersResult.rows.map(r => {
+      const cost = Number(r.cost);
+      const discount = Number(r.discount);
+      const paidTotal = Number(r.paid_total);
+      return {
+        id: r.id,
+        client_name: r.client_name,
+        brand: r.brand,
+        model: r.model,
+        cost,
+        discount,
+        paid_total: paidTotal,
+        balance: cost - discount - paidTotal,
+        completed_at: r.completed_at,
+      };
+    });
+    const debt = debtOrders.reduce((sum, o) => sum + Math.max(0, o.balance), 0);
+
     res.json({
       period: { from: fromDate, to: toDate },
       income,
@@ -175,23 +197,8 @@ financeRouter.get('/report', requireRole('admin'), async (req, res, next) => {
         client_name: r.client_name,
         completed_at: r.completed_at
       })),
-      debt: income - paid,
-      debt_orders: debtOrdersResult.rows.map(r => {
-        const cost = Number(r.cost);
-        const discount = Number(r.discount);
-        const paidTotal = Number(r.paid_total);
-        return {
-          id: r.id,
-          client_name: r.client_name,
-          brand: r.brand,
-          model: r.model,
-          cost: cost,
-          discount: discount,
-          paid_total: paidTotal,
-          balance: cost - discount - paidTotal,
-          completed_at: r.completed_at
-        };
-      }),
+      debt,
+      debt_orders: debtOrders,
       expenses: {
         direct: directExpenses,
         parts_cost: partsCost,
@@ -232,6 +239,8 @@ financeRouter.get('/report/export', requireRole('admin'), async (req, res, next)
               c.name AS client, c.phone,
               d.brand || ' ' || d.model AS device,
               o.cost, o.discount, (o.cost - o.discount) AS total,
+              (SELECT COALESCE(SUM(p.amount), 0) FROM payments p
+                WHERE p.order_id = o.id AND p.refunded_at IS NULL) AS paid_total,
               os.name AS status
        FROM orders o
        JOIN devices d ON d.id = o.device_id
@@ -308,6 +317,11 @@ financeRouter.get('/report/export', requireRole('admin'), async (req, res, next)
       csv += [r.order_id, csvEscape(r.client), r.date, r.amount, r.method, r.is_prepayment ? 'Предоплата' : 'Доплата'].join(sep) + '\n';
     }
     const totalPaid = paymentsResult.rows.reduce((s: number, r: any) => s + Number(r.amount), 0);
+    // Долг — сумма положительных остатков, как в JSON-отчёте
+    const totalDebt = ordersResult.rows.reduce(
+      (s: number, r: any) => s + Math.max(0, Number(r.total) - Number(r.paid_total)),
+      0,
+    );
     csv += `\nИТОГО ОПЛАЧЕНО:;;;${totalPaid}\n\n`;
 
     // Секция: Расходы
@@ -328,12 +342,15 @@ financeRouter.get('/report/export', requireRole('admin'), async (req, res, next)
 
     // Итоговые показатели
     const totalAllExpenses = totalExpenses + totalPartsCost;
-    const profit = totalPaid - totalAllExpenses;
+    // Та же методика, что и в JSON-отчёте: прибыль = начислено − расходы.
+    const profit = totalIncome - totalAllExpenses;
     csv += `\nИТОГО РАСХОДЫ (без запчастей):;;;${totalExpenses}\n`;
     csv += `ИТОГО ЗАПЧАСТИ:;;;${totalPartsCost}\n`;
     csv += `ИТОГО ВСЕ РАСХОДЫ:;;;${totalAllExpenses}\n`;
-    csv += `\nПРИБЫЛЬ:;;;${profit}\n`;
+    csv += `\nПРИБЫЛЬ (НАЧИСЛЕНО − РАСХОДЫ):;;;${profit}\n`;
+    csv += `НАЧИСЛЕНО:;;;${totalIncome}\n`;
     csv += `ОПЛАЧЕНО:;;;${totalPaid}\n`;
+    csv += `ДОЛГ:;;;${totalDebt}\n`;
     csv += `КОЛ-ВО ЗАКАЗОВ:;;;${ordersResult.rows.length}\n`;
 
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
@@ -355,6 +372,14 @@ function toDateStr(d: Date): string {
 }
 
 function getPeriodRange(period: string): { from: string; to: string } {
+  // Формат из FinancePeriodSelector: custom_YYYY-MM-DD_YYYY-MM-DD
+  if (period.startsWith('custom_')) {
+    const [from, to] = period.slice('custom_'.length).split('_');
+    if (/^\d{4}-\d{2}-\d{2}$/.test(from ?? '') && /^\d{4}-\d{2}-\d{2}$/.test(to ?? '')) {
+      return { from, to };
+    }
+  }
+
   const now = new Date();
   let from: Date;
   const to = new Date(now);
@@ -382,7 +407,7 @@ function getPeriodRange(period: string): { from: string; to: string } {
 
 // GET /finance/master-payouts — расчёт комиссии мастерам
 // admin — видит всех, master — только себя
-financeRouter.get('/master-payouts', async (req, res, next) => {
+financeRouter.get('/master-payouts', requireRole('admin', 'master'), async (req, res, next) => {
   try {
     const user = req.user!;
     const { period = 'month', master_id } = req.query;
@@ -412,8 +437,9 @@ financeRouter.get('/master-payouts', async (req, res, next) => {
         u.id AS master_id,
         u.name AS master_name,
         COALESCE(op.parts_cost, 0) AS parts_cost,
-        (o.cost - o.discount - COALESCE(op.parts_cost, 0)) AS profit,
-        ROUND((o.cost - o.discount - COALESCE(op.parts_cost, 0)) * o.master_commission_pct / 100, 2) AS master_payout
+        GREATEST(0, o.cost - o.discount - COALESCE(op.parts_cost, 0)) AS profit,
+        ROUND(GREATEST(0, o.cost - o.discount - COALESCE(op.parts_cost, 0))
+          * o.master_commission_pct / 100, 2) AS master_payout
       FROM orders o
       JOIN users u ON u.id = o.master_id
       LEFT JOIN (

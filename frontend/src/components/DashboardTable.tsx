@@ -30,6 +30,7 @@ interface Props {
   colOrder: ColumnKey[];
   dragCol: ColumnKey | null;
   statusDropdownId: number | null;
+  canChangeStatus: boolean;
   onColOrderChange: (order: ColumnKey[]) => void;
   onDragColChange: (key: ColumnKey | null) => void;
   onStatusDropdownChange: (id: number | null) => void;
@@ -38,7 +39,7 @@ interface Props {
 }
 
 export function DashboardTable({ orders, compact, colOrder, dragCol, statusDropdownId,
-  onColOrderChange, onDragColChange, onStatusDropdownChange, onStatusChange, onRowClick }: Props) {
+  canChangeStatus, onColOrderChange, onDragColChange, onStatusDropdownChange, onStatusChange, onRowClick }: Props) {
 
   const [copiedImei, setCopiedImei] = useState<number | null>(null);
 
@@ -60,7 +61,7 @@ export function DashboardTable({ orders, compact, colOrder, dragCol, statusDropd
           №{o.id}{o.is_overdue && <span className="ro-overdue-dot" title="Просрочен">!</span>}
         </td>;
       case 'status': {
-        const available = STATUS_TRANSITIONS[o.status_slug] || [];
+        const available = canChangeStatus ? (STATUS_TRANSITIONS[o.status_slug] || []) : [];
         const isOpen = statusDropdownId === o.id;
         return <td key={key} style={{ position: 'relative' }}>
           <div className="ro-status-wrap">
